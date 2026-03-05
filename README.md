@@ -267,6 +267,40 @@ end
 - **Crystal >= 1.19.1**
 - **Swift toolchain** (included with Xcode)
 
+> **Important:** The active developer directory must point to the full Xcode installation, not Command Line Tools. See [FAQ](#faq) if you encounter build errors.
+
+## FAQ
+
+### Build fails with `FoundationModelsMacros` not found
+
+```
+error: external macro implementation type 'FoundationModelsMacros.GenerableMacro'
+could not be found for macro 'Generable(description:)'
+```
+
+This happens when the active developer directory is set to **Command Line Tools** instead of **Xcode**. The `@Generable` macro plugin is only available in the full Xcode installation.
+
+**Fix:**
+
+```bash
+sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+```
+
+You can verify the current setting with:
+
+```bash
+xcode-select -p
+# Should output: /Applications/Xcode.app/Contents/Developer
+```
+
+### Model is not available or device not eligible
+
+Apple Intelligence must be enabled on your Mac, and the device must support it (Apple Silicon). Check **System Settings > Apple Intelligence & Siri** to enable it.
+
+### Token usage returns `nil`
+
+The `token_usage_for` API requires **macOS 26.4+** (SDK version 26.4 or later). On older versions, it returns `nil` by design.
+
 ## Contributing
 
 1. Fork it (<https://github.com/hahwul/fm.cr/fork>)
