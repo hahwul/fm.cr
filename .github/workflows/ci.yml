@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Crystal
+        run: brew install crystal
+
+      - name: Install dependencies
+        run: shards install
+
+      - name: Build
+        run: shards build
+
+      - name: Run tests
+        run: crystal spec
