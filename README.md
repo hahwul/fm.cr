@@ -1,7 +1,8 @@
 <div align="center">
-    <img alt="fm.cr Logo" src="resources/logo.webp" width="200px;">
+    <img alt="fm.cr Logo" src="resources/logo.webp" width="400px;">
 </div>
-
+<br>
+    
 Crystal bindings for Apple's [FoundationModels](https://developer.apple.com/documentation/foundationmodels) framework. Run on-device AI powered by Apple Intelligence directly from Crystal.
 
 > Requires **macOS 26+** (Tahoe) with Apple Intelligence enabled.
