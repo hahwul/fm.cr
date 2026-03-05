@@ -1,5 +1,5 @@
 <div align="center">
-    <img alt="fm.cr Logo" src="resources/logo.webp" width="400px;">
+    <img alt="fm.cr Logo" src="resources/logo.webp" width="300px;">
 </div>
 <br>
     
