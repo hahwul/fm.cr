@@ -31,6 +31,7 @@ module Fm
     # -- Model functions --
 
     fun fm_model_default(error_out : Void**) : Void*
+    fun fm_model_create(use_case : Int32, guardrails : Int32, error_out : Void**) : Void*
     fun fm_model_is_available(model : Void*) : Bool
     fun fm_model_availability(model : Void*) : Int32
     fun fm_model_free(model : Void*) : Void

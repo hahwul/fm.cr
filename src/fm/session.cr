@@ -291,10 +291,20 @@ module Fm
     # :nodoc:
     protected def self.error_from_stream(code : Int32, message : String) : Error
       case code
-      when 3 then GenerationError.new("Operation cancelled")
-      when 4 then ToolCallError.new("unknown", message)
-      when 6 then TimeoutError.new(message)
-      else        GenerationError.new(message)
+      when  3 then GenerationError.new("Operation cancelled")
+      when  4 then ToolCallError.new("unknown", message)
+      when  6 then TimeoutError.new(message)
+      when  7 then ExceededContextWindowSizeError.new(message)
+      when  8 then AssetsUnavailableError.new(message)
+      when  9 then GuardrailViolationError.new(message)
+      when 10 then UnsupportedGuideError.new(message)
+      when 11 then UnsupportedLanguageOrLocaleError.new(message)
+      when 12 then DecodingFailureError.new(message)
+      when 13 then RateLimitedError.new(message)
+      when 14 then ConcurrentRequestsError.new(message)
+      when 15 then RefusalError.new(message)
+      when 16 then InvalidGenerationSchemaError.new(message)
+      else         GenerationError.new(message)
       end
     end
 

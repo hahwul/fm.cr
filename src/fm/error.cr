@@ -36,6 +36,46 @@ module Fm
   class GenerationError < Error
   end
 
+  # The input exceeded the model's context window size.
+  class ExceededContextWindowSizeError < GenerationError
+  end
+
+  # Model assets are unavailable (downloading or missing).
+  class AssetsUnavailableError < GenerationError
+  end
+
+  # The model refused to generate due to a guardrail violation.
+  class GuardrailViolationError < GenerationError
+  end
+
+  # A generation guide constraint is not supported.
+  class UnsupportedGuideError < GenerationError
+  end
+
+  # The requested language or locale is not supported.
+  class UnsupportedLanguageOrLocaleError < GenerationError
+  end
+
+  # Failed to decode the model's output.
+  class DecodingFailureError < GenerationError
+  end
+
+  # The request was rate-limited by the system.
+  class RateLimitedError < GenerationError
+  end
+
+  # Multiple concurrent requests were attempted on the same session.
+  class ConcurrentRequestsError < GenerationError
+  end
+
+  # The model refused to generate a response.
+  class RefusalError < GenerationError
+  end
+
+  # The provided generation schema is invalid.
+  class InvalidGenerationSchemaError < GenerationError
+  end
+
   # Operation timed out.
   class TimeoutError < Error
   end
@@ -90,9 +130,19 @@ module Fm
         message: message,
         arguments_json: tool_args
       )
-    when 5 then InvalidInputError.new(message)
-    when 6 then TimeoutError.new(message)
-    else        InternalError.new(message)
+    when  5 then InvalidInputError.new(message)
+    when  6 then TimeoutError.new(message)
+    when  7 then ExceededContextWindowSizeError.new(message)
+    when  8 then AssetsUnavailableError.new(message)
+    when  9 then GuardrailViolationError.new(message)
+    when 10 then UnsupportedGuideError.new(message)
+    when 11 then UnsupportedLanguageOrLocaleError.new(message)
+    when 12 then DecodingFailureError.new(message)
+    when 13 then RateLimitedError.new(message)
+    when 14 then ConcurrentRequestsError.new(message)
+    when 15 then RefusalError.new(message)
+    when 16 then InvalidGenerationSchemaError.new(message)
+    else         InternalError.new(message)
     end
   end
 

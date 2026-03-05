@@ -18,6 +18,29 @@ module Fm
   # schema = Person.json_schema
   # # => {"type" => "object", "properties" => {"name" => {"type" => "string"}, ...}, "required" => [...]}
   # ```
+  #
+  # You can use `Fm::Guide` annotations to add constraints:
+  #
+  # ```
+  # struct Movie
+  #   include JSON::Serializable
+  #   include Fm::Generable
+  #
+  #   getter title : String
+  #
+  #   @[Fm::Guide(any_of: ["G", "PG", "PG-13", "R"])]
+  #   getter rating : String
+  #
+  #   @[Fm::Guide(minimum: 1, maximum: 10)]
+  #   getter score : Int32
+  #
+  #   @[Fm::Guide(pattern: "^[A-Z]")]
+  #   getter director : String
+  #
+  #   @[Fm::Guide(min_items: 1, max_items: 5)]
+  #   getter genres : Array(String)
+  # end
+  # ```
   module Generable
     macro included
       def self.json_schema : JSON::Any
@@ -28,7 +51,51 @@ module Fm
           \{% ann = ivar.annotation(JSON::Field) %}
           \{% key = ann && ann[:key] ? ann[:key] : ivar.name.stringify %}
           \{% unless ann && ann[:ignore] %}
-            properties.as_h[\{{key}}] = Fm::Generable.type_to_schema(\{{ivar.type}})
+            prop_schema = Fm::Generable.type_to_schema(\{{ivar.type}})
+
+            \{% guide = ivar.annotation(Fm::Guide) %}
+            \{% if guide %}
+              _h = prop_schema.as_h
+
+              \{% if guide[:description] %}
+                _h["description"] = JSON::Any.new(\{{guide[:description]}})
+              \{% end %}
+
+              \{% if guide[:any_of] %}
+                _h["enum"] = JSON::Any.new(\{{guide[:any_of]}}.map { |v| JSON::Any.new(v) })
+              \{% end %}
+
+              \{% if guide[:constant] %}
+                _h["const"] = JSON::Any.new(\{{guide[:constant]}})
+              \{% end %}
+
+              \{% if guide[:minimum] %}
+                _h["minimum"] = JSON::Any.new(\{{guide[:minimum]}}.to_i64)
+              \{% end %}
+
+              \{% if guide[:maximum] %}
+                _h["maximum"] = JSON::Any.new(\{{guide[:maximum]}}.to_i64)
+              \{% end %}
+
+              \{% if guide[:pattern] %}
+                _h["pattern"] = JSON::Any.new(\{{guide[:pattern]}})
+              \{% end %}
+
+              \{% if guide[:min_items] %}
+                _h["minItems"] = JSON::Any.new(\{{guide[:min_items]}}.to_i64)
+              \{% end %}
+
+              \{% if guide[:max_items] %}
+                _h["maxItems"] = JSON::Any.new(\{{guide[:max_items]}}.to_i64)
+              \{% end %}
+
+              \{% if guide[:count] %}
+                _h["minItems"] = JSON::Any.new(\{{guide[:count]}}.to_i64)
+                _h["maxItems"] = JSON::Any.new(\{{guide[:count]}}.to_i64)
+              \{% end %}
+            \{% end %}
+
+            properties.as_h[\{{key}}] = prop_schema
             \{% unless ivar.type.nilable? || ivar.has_default_value? %}
               required << JSON::Any.new(\{{key}})
             \{% end %}

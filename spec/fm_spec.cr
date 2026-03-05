@@ -38,6 +38,32 @@ private struct TestWithJsonField
   getter internal_id : Int32 = 0
 end
 
+private struct TestWithGuide
+  include JSON::Serializable
+  include Fm::Generable
+
+  @[Fm::Guide(any_of: ["G", "PG", "PG-13", "R", "NC-17"])]
+  getter rating : String
+
+  @[Fm::Guide(minimum: 0, maximum: 10)]
+  getter score : Int32
+
+  @[Fm::Guide(pattern: "^[A-Z]")]
+  getter title : String
+
+  @[Fm::Guide(min_items: 1, max_items: 5)]
+  getter genres : Array(String)
+
+  @[Fm::Guide(count: 3)]
+  getter top_three : Array(String)
+
+  @[Fm::Guide(constant: "movie")]
+  getter kind : String
+
+  @[Fm::Guide(description: "Release year of the movie")]
+  getter year : Int32
+end
+
 private class TestTool < Fm::Tool
   def name : String
     "testTool"
@@ -426,6 +452,123 @@ describe Fm do
       props.has_key?("full_name").should be_true
       props.has_key?("name").should be_false
       props.has_key?("internal_id").should be_false
+    end
+
+    it "applies Guide any_of constraint" do
+      schema = TestWithGuide.json_schema
+      props = schema["properties"].as_h
+      enum_values = props["rating"]["enum"].as_a.map(&.as_s)
+      enum_values.should eq ["G", "PG", "PG-13", "R", "NC-17"]
+    end
+
+    it "applies Guide minimum/maximum constraints" do
+      schema = TestWithGuide.json_schema
+      props = schema["properties"].as_h
+      props["score"]["minimum"].as_i.should eq 0
+      props["score"]["maximum"].as_i.should eq 10
+    end
+
+    it "applies Guide pattern constraint" do
+      schema = TestWithGuide.json_schema
+      props = schema["properties"].as_h
+      props["title"]["pattern"].as_s.should eq "^[A-Z]"
+    end
+
+    it "applies Guide min_items/max_items constraints" do
+      schema = TestWithGuide.json_schema
+      props = schema["properties"].as_h
+      props["genres"]["minItems"].as_i.should eq 1
+      props["genres"]["maxItems"].as_i.should eq 5
+    end
+
+    it "applies Guide count constraint" do
+      schema = TestWithGuide.json_schema
+      props = schema["properties"].as_h
+      props["top_three"]["minItems"].as_i.should eq 3
+      props["top_three"]["maxItems"].as_i.should eq 3
+    end
+
+    it "applies Guide constant constraint" do
+      schema = TestWithGuide.json_schema
+      props = schema["properties"].as_h
+      props["kind"]["const"].as_s.should eq "movie"
+    end
+
+    it "applies Guide description" do
+      schema = TestWithGuide.json_schema
+      props = schema["properties"].as_h
+      props["year"]["description"].as_s.should eq "Release year of the movie"
+    end
+  end
+
+  describe "granular generation errors" do
+    it "creates ExceededContextWindowSizeError" do
+      err = Fm::ExceededContextWindowSizeError.new("too long")
+      err.message.should eq "too long"
+      err.is_a?(Fm::GenerationError).should be_true
+    end
+
+    it "creates GuardrailViolationError" do
+      err = Fm::GuardrailViolationError.new("unsafe content")
+      err.message.should eq "unsafe content"
+      err.is_a?(Fm::GenerationError).should be_true
+    end
+
+    it "creates RateLimitedError" do
+      err = Fm::RateLimitedError.new("slow down")
+      err.message.should eq "slow down"
+      err.is_a?(Fm::GenerationError).should be_true
+    end
+
+    it "creates RefusalError" do
+      err = Fm::RefusalError.new("refused")
+      err.message.should eq "refused"
+      err.is_a?(Fm::GenerationError).should be_true
+    end
+
+    it "creates ConcurrentRequestsError" do
+      err = Fm::ConcurrentRequestsError.new("busy")
+      err.message.should eq "busy"
+      err.is_a?(Fm::GenerationError).should be_true
+    end
+
+    it "creates AssetsUnavailableError" do
+      err = Fm::AssetsUnavailableError.new("downloading")
+      err.is_a?(Fm::GenerationError).should be_true
+    end
+
+    it "creates UnsupportedGuideError" do
+      err = Fm::UnsupportedGuideError.new("bad guide")
+      err.is_a?(Fm::GenerationError).should be_true
+    end
+
+    it "creates UnsupportedLanguageOrLocaleError" do
+      err = Fm::UnsupportedLanguageOrLocaleError.new("unsupported")
+      err.is_a?(Fm::GenerationError).should be_true
+    end
+
+    it "creates DecodingFailureError" do
+      err = Fm::DecodingFailureError.new("decode failed")
+      err.is_a?(Fm::GenerationError).should be_true
+    end
+
+    it "creates InvalidGenerationSchemaError" do
+      err = Fm::InvalidGenerationSchemaError.new("bad schema")
+      err.is_a?(Fm::GenerationError).should be_true
+    end
+  end
+
+  describe "UseCase enum" do
+    it "has expected values" do
+      Fm::UseCase::General.value.should eq 0
+      Fm::UseCase::ContentTagging.value.should eq 1
+    end
+  end
+
+  describe "Guardrails enum" do
+    it "has expected values" do
+      Fm::Guardrails::Default.value.should eq 0
+      Fm::Guardrails::PermissiveContentTransformations.value.should eq 1
     end
   end
 end

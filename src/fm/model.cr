@@ -8,6 +8,24 @@ module Fm
     Unknown
   end
 
+  # The intended use case for the model.
+  enum UseCase
+    # General-purpose language model use (default).
+    General
+    # Optimized for content tagging and classification.
+    ContentTagging
+  end
+
+  # Content safety guardrail configuration.
+  enum Guardrails
+    # Default guardrails applied to all generation.
+    Default
+    # More permissive guardrails for content transformation tasks
+    # (e.g., summarization, rewriting) where the input may contain
+    # sensitive content that needs to be preserved in the output.
+    PermissiveContentTransformations
+  end
+
   # The system language model provided by Apple Intelligence.
   #
   # This is the main entry point for using on-device AI capabilities.
@@ -18,13 +36,22 @@ module Fm
   #   puts "Model is ready!"
   # end
   # ```
+  #
+  # You can also specify use case and guardrails:
+  #
+  # ```
+  # model = Fm::SystemLanguageModel.new(
+  #   use_case: Fm::UseCase::ContentTagging,
+  #   guardrails: Fm::Guardrails::PermissiveContentTransformations
+  # )
+  # ```
   class SystemLanguageModel
     @ptr : Void*
 
-    def initialize
+    def initialize(*, use_case : UseCase = UseCase::General, guardrails : Guardrails = Guardrails::Default)
       error = Fm.make_error_ptr
 
-      @ptr = LibFmFfi.fm_model_default(error)
+      @ptr = LibFmFfi.fm_model_create(use_case.value, guardrails.value, error)
 
       Fm.check_error!(error.value)
 

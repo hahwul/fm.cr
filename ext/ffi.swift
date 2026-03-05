@@ -17,6 +17,16 @@ private enum FFIErrorCode: Int32 {
     case toolError = 4
     case invalidInput = 5
     case timeout = 6
+    case exceededContextWindowSize = 7
+    case assetsUnavailable = 8
+    case guardrailViolation = 9
+    case unsupportedGuide = 10
+    case unsupportedLanguageOrLocale = 11
+    case decodingFailure = 12
+    case rateLimited = 13
+    case concurrentRequests = 14
+    case refusal = 15
+    case invalidGenerationSchema = 16
 }
 
 let tokenUsageUnavailableSentinel: Int64 = -2
@@ -103,8 +113,37 @@ private func createErrorFromException(_ error: Error, defaultCode: FFIErrorCode 
         )
     } else if let timeoutError = error as? TimeoutError {
         return createError(timeoutError.message, code: .timeout)
+    } else if let genError = error as? LanguageModelSession.GenerationError {
+        let (code, message) = mapGenerationError(genError)
+        return createError(message, code: code)
     } else {
         return createError(error.localizedDescription, code: defaultCode)
+    }
+}
+
+/// Maps FoundationModels GenerationError to specific FFI error codes.
+private func mapGenerationError(_ error: LanguageModelSession.GenerationError) -> (FFIErrorCode, String) {
+    switch error {
+    case .exceededContextWindowSize:
+        return (.exceededContextWindowSize, "Exceeded context window size")
+    case .assetsUnavailable:
+        return (.assetsUnavailable, "Model assets are unavailable")
+    case .guardrailViolation(let context):
+        return (.guardrailViolation, "Guardrail violation: \(context.debugDescription)")
+    case .unsupportedGuide:
+        return (.unsupportedGuide, "Unsupported generation guide constraint")
+    case .unsupportedLanguageOrLocale:
+        return (.unsupportedLanguageOrLocale, "Unsupported language or locale")
+    case .decodingFailure:
+        return (.decodingFailure, "Failed to decode model output")
+    case .rateLimited:
+        return (.rateLimited, "Request was rate limited")
+    case .concurrentRequests:
+        return (.concurrentRequests, "Concurrent requests are not supported on a single session")
+    case .refusal(_, let context):
+        return (.refusal, "Model refused: \(context.debugDescription)")
+    @unknown default:
+        return (.generationFailed, error.localizedDescription)
     }
 }
 
@@ -118,6 +157,37 @@ func createGenerationErrorFromException(_ error: Error) -> UnsafeMutableRawPoint
 @_cdecl("fm_model_default")
 public func fm_model_default(_ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?) -> UnsafeMutableRawPointer? {
     let model = SystemLanguageModel.default
+    return Unmanaged.passRetained(model as AnyObject).toOpaque()
+}
+
+/// Creates a SystemLanguageModel with specific use case and guardrails.
+///
+/// - Parameters:
+///   - useCase: 0 = general (default), 1 = contentTagging
+///   - guardrails: 0 = default, 1 = permissiveContentTransformations
+@_cdecl("fm_model_create")
+public func fm_model_create(
+    _ useCase: Int32,
+    _ guardrails: Int32,
+    _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
+) -> UnsafeMutableRawPointer? {
+    let swiftUseCase: SystemLanguageModel.UseCase
+    switch useCase {
+    case 1:
+        swiftUseCase = .contentTagging
+    default:
+        swiftUseCase = .general
+    }
+
+    let swiftGuardrails: SystemLanguageModel.Guardrails
+    switch guardrails {
+    case 1:
+        swiftGuardrails = .permissiveContentTransformations
+    default:
+        swiftGuardrails = .default
+    }
+
+    let model = SystemLanguageModel(useCase: swiftUseCase, guardrails: swiftGuardrails)
     return Unmanaged.passRetained(model as AnyObject).toOpaque()
 }
 
