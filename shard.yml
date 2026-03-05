@@ -1,0 +1,16 @@
+name: fm
+version: 0.1.0
+
+description: |
+  Crystal bindings for Apple FoundationModels.framework (macOS 26+).
+  On-device AI powered by Apple Intelligence.
+
+authors:
+  - hahwul <hahwul@gmail.com>
+
+crystal: '>= 1.19.1'
+
+license: MIT
+
+scripts:
+  postinstall: cd ext && make

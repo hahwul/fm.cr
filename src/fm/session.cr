@@ -1,0 +1,365 @@
+require "json"
+
+module Fm
+  # A session that interacts with the language model.
+  #
+  # A session maintains conversation context between requests, enabling
+  # multi-turn conversations. Create a new session for each conversation
+  # or reuse for multi-turn dialogue.
+  #
+  # ```
+  # model = Fm::SystemLanguageModel.new
+  # session = Fm::Session.new(model)
+  # response = session.respond("Hello!")
+  # puts response.content
+  # ```
+  class Session
+    # Creates a new session with optional instructions and/or tools.
+    #
+    # ```
+    # session = Fm::Session.new(model)
+    # session = Fm::Session.new(model, instructions: "Be helpful.")
+    # session = Fm::Session.new(model, tools: [my_tool])
+    # session = Fm::Session.new(model, instructions: "Be helpful.", tools: [my_tool])
+    # ```
+    def initialize(model : SystemLanguageModel, *, instructions : String? = nil, tools : Array(Tool)? = nil)
+      instructions_ptr = instructions ? instructions.to_unsafe : Pointer(LibC::Char).null
+      tools_json_ptr = Pointer(LibC::Char).null
+      user_data = Pointer(Void).null
+
+      if tools && !tools.empty?
+        tools_json = Tool.tools_to_json(tools)
+        tools_json_ptr = tools_json.to_unsafe
+
+        boxed = Box(Array(Tool)).box(tools)
+        @tool_box = boxed
+        user_data = boxed
+      else
+        @tool_box = nil
+      end
+
+      error = Pointer(Void*).malloc(1)
+      error.value = Pointer(Void).null
+
+      @ptr = LibFmFfi.fm_session_create(
+        model.to_unsafe,
+        instructions_ptr,
+        tools_json_ptr,
+        user_data,
+        ->Session.tool_callback(Void*, LibC::Char*, LibC::Char*),
+        error
+      )
+
+      Fm.check_error!(error.value)
+
+      if @ptr.null?
+        raise InternalError.new(
+          "Session creation returned null without error. " \
+          "Check model availability and instructions validity."
+        )
+      end
+    end
+
+    # :nodoc:
+    protected def initialize(@ptr : Void*, @tool_box : Void*?)
+    end
+
+    # Creates a session from a transcript JSON string.
+    def self.from_transcript(model : SystemLanguageModel, transcript_json : String) : self
+      error = Pointer(Void*).malloc(1)
+      error.value = Pointer(Void).null
+
+      ptr = LibFmFfi.fm_session_from_transcript(
+        model.to_unsafe,
+        transcript_json.to_unsafe,
+        error
+      )
+
+      Fm.check_error!(error.value)
+
+      if ptr.null?
+        raise InternalError.new(
+          "Session creation from transcript returned null without error."
+        )
+      end
+
+      new(ptr, nil)
+    end
+
+    # :nodoc:
+    def to_unsafe : Void*
+      @ptr
+    end
+
+    # Sends a prompt and waits for the complete response.
+    #
+    # ```
+    # response = session.respond("What is the capital of France?")
+    # puts response.content
+    # ```
+    def respond(prompt : String, options : GenerationOptions = GenerationOptions.default) : Response
+      options_json = options.to_json
+
+      error = Pointer(Void*).malloc(1)
+      error.value = Pointer(Void).null
+
+      response_ptr = LibFmFfi.fm_session_respond(
+        @ptr,
+        prompt.to_unsafe,
+        options_json.to_unsafe,
+        error
+      )
+
+      Fm.check_error!(error.value)
+
+      if response_ptr.null?
+        raise GenerationError.new("Received null response")
+      end
+
+      content = String.new(response_ptr)
+      LibFmFfi.fm_string_free(response_ptr)
+      Response.new(content)
+    end
+
+    # Sends a prompt and waits for the response, with a timeout.
+    def respond(prompt : String, options : GenerationOptions = GenerationOptions.default, *, timeout : Time::Span) : Response
+      timeout_ms = timeout.total_milliseconds.to_u64
+
+      if timeout_ms == 0
+        return respond(prompt, options)
+      end
+
+      options_json = options.to_json
+
+      error = Pointer(Void*).malloc(1)
+      error.value = Pointer(Void).null
+
+      response_ptr = LibFmFfi.fm_session_respond_with_timeout(
+        @ptr,
+        prompt.to_unsafe,
+        options_json.to_unsafe,
+        timeout_ms,
+        error
+      )
+
+      Fm.check_error!(error.value)
+
+      if response_ptr.null?
+        raise GenerationError.new("Received null response")
+      end
+
+      content = String.new(response_ptr)
+      LibFmFfi.fm_string_free(response_ptr)
+      Response.new(content)
+    end
+
+    # Sends a prompt and streams the response via a block.
+    #
+    # The block receives each text chunk as it arrives from the model.
+    # This method blocks until streaming is complete.
+    #
+    # ```
+    # session.stream("Tell me a story") do |chunk|
+    #   print chunk
+    # end
+    # ```
+    def stream(prompt : String, options : GenerationOptions = GenerationOptions.default, &block : String ->) : Nil
+      options_json = options.to_json
+
+      state = StreamState.new(block)
+      boxed = Box(StreamState).box(state)
+
+      LibFmFfi.fm_session_stream(
+        @ptr,
+        prompt.to_unsafe,
+        options_json.to_unsafe,
+        boxed,
+        ->Session.on_chunk(Void*, LibC::Char*),
+        ->Session.on_done(Void*),
+        ->Session.on_error(Void*, Int32, LibC::Char*)
+      )
+
+      if err = state.error
+        raise GenerationError.new(err)
+      end
+    end
+
+    # Cancels an ongoing stream operation.
+    def cancel : Nil
+      LibFmFfi.fm_session_cancel(@ptr)
+    end
+
+    # Checks if the session is currently generating a response.
+    def responding? : Bool
+      LibFmFfi.fm_session_is_responding(@ptr)
+    end
+
+    # Gets the session transcript as a JSON string.
+    def transcript_json : String
+      error = Pointer(Void*).malloc(1)
+      error.value = Pointer(Void).null
+
+      ptr = LibFmFfi.fm_session_get_transcript(@ptr, error)
+
+      Fm.check_error!(error.value)
+
+      if ptr.null?
+        raise InternalError.new("Transcript retrieval returned null without error")
+      end
+
+      json = String.new(ptr)
+      LibFmFfi.fm_string_free(ptr)
+      json
+    end
+
+    # Prewarms the model with an optional prompt prefix.
+    def prewarm(prompt_prefix : String? = nil) : Nil
+      prefix_ptr = prompt_prefix ? prompt_prefix.to_unsafe : Pointer(LibC::Char).null
+      LibFmFfi.fm_session_prewarm(@ptr, prefix_ptr)
+    end
+
+    # Sends a prompt and returns a structured JSON response matching a schema.
+    #
+    # ```
+    # schema = %({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]})
+    # json = session.respond_json("Generate a person", schema)
+    # ```
+    def respond_json(prompt : String, schema_json : String, options : GenerationOptions = GenerationOptions.default) : String
+      options_json = options.to_json
+
+      error = Pointer(Void*).malloc(1)
+      error.value = Pointer(Void).null
+
+      response_ptr = LibFmFfi.fm_session_respond_json(
+        @ptr,
+        prompt.to_unsafe,
+        schema_json.to_unsafe,
+        options_json.to_unsafe,
+        error
+      )
+
+      Fm.check_error!(error.value)
+
+      if response_ptr.null?
+        raise GenerationError.new("Received null response from JSON generation")
+      end
+
+      content = String.new(response_ptr)
+      LibFmFfi.fm_string_free(response_ptr)
+      content
+    end
+
+    # Sends a prompt and returns a deserialized structured response.
+    #
+    # The type `T` must include `JSON::Serializable` and `Fm::Generable`.
+    #
+    # ```
+    # struct Person
+    #   include JSON::Serializable
+    #   include Fm::Generable
+    #
+    #   getter name : String
+    #   getter age : Int32
+    # end
+    #
+    # person = session.respond_structured(Person, "Generate a fictional person")
+    # puts person.name
+    # ```
+    def respond_structured(type : T.class, prompt : String, options : GenerationOptions = GenerationOptions.default) : T forall T
+      schema = T.json_schema.to_json
+      json_str = respond_json(prompt, schema, options)
+      T.from_json(json_str)
+    end
+
+    # Streams a structured JSON response matching a schema.
+    def stream_json(prompt : String, schema_json : String, options : GenerationOptions = GenerationOptions.default, &block : String ->) : Nil
+      options_json = options.to_json
+
+      state = StreamState.new(block)
+      boxed = Box(StreamState).box(state)
+
+      LibFmFfi.fm_session_stream_json(
+        @ptr,
+        prompt.to_unsafe,
+        schema_json.to_unsafe,
+        options_json.to_unsafe,
+        boxed,
+        ->Session.on_chunk(Void*, LibC::Char*),
+        ->Session.on_done(Void*),
+        ->Session.on_error(Void*, Int32, LibC::Char*)
+      )
+
+      if err = state.error
+        raise GenerationError.new(err)
+      end
+    end
+
+    def finalize
+      unless @ptr.null?
+        LibFmFfi.fm_session_free(@ptr)
+        @ptr = Pointer(Void).null
+      end
+    end
+
+    # -- Streaming callback infrastructure --
+
+    # :nodoc:
+    class StreamState
+      property error : String?
+      getter on_chunk : String ->
+
+      def initialize(@on_chunk : String ->)
+        @error = nil
+      end
+    end
+
+    # :nodoc:
+    protected def self.on_chunk(user_data : Void*, chunk : LibC::Char*) : Void
+      return if user_data.null? || chunk.null?
+      state = Box(StreamState).unbox(user_data)
+      state.on_chunk.call(String.new(chunk))
+    end
+
+    # :nodoc:
+    protected def self.on_done(user_data : Void*) : Void
+    end
+
+    # :nodoc:
+    protected def self.on_error(user_data : Void*, code : Int32, message : LibC::Char*) : Void
+      return if user_data.null?
+      state = Box(StreamState).unbox(user_data)
+      msg = message.null? ? "Streaming error (no message)" : String.new(message)
+      state.error = msg
+    end
+
+    # -- Tool callback --
+
+    # :nodoc:
+    protected def self.tool_callback(user_data : Void*, tool_name : LibC::Char*, arguments_json : LibC::Char*) : LibC::Char*
+      if user_data.null? || tool_name.null?
+        result = ToolResult.error("Invalid callback parameters")
+        return LibC.strdup(result.to_json)
+      end
+
+      tools = Box(Array(Tool)).unbox(user_data)
+      name = String.new(tool_name)
+      args_str = arguments_json.null? ? "{}" : String.new(arguments_json)
+
+      tool = tools.find { |t| t.name == name }
+      unless tool
+        result = ToolResult.error("Unknown tool: #{name}")
+        return LibC.strdup(result.to_json)
+      end
+
+      result = begin
+        args = JSON.parse(args_str)
+        output = tool.call(args)
+        ToolResult.success(output)
+      rescue ex
+        ToolResult.error(ex.message || "Tool invocation failed")
+      end
+
+      LibC.strdup(result.to_json)
+    end
+  end
+end

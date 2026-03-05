@@ -1,0 +1,16 @@
+/docs/
+/lib/
+/bin/
+/.shards/
+*.dwarf
+shard.lock
+
+# Swift build artifacts
+ext/libfm_ffi.a
+ext/*.o
+ext/*.swiftmodule
+ext/*.swiftdoc
+ext/*.abi.json
+
+# Reference code (not part of this project)
+/fm-rs/
