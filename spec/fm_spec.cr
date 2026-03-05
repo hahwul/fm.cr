@@ -171,7 +171,7 @@ describe Fm do
       tool = TestTool.new
       args = JSON.parse(%({"input":"hello"}))
       output = tool.call(args)
-      output.content.should eq %(result: "hello")
+      output.content.should eq %(result: hello)
     end
   end
 

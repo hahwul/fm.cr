@@ -59,7 +59,8 @@ module Fm
       {% elsif T == Bool %}
         JSON::Any.new({"type" => JSON::Any.new("boolean")} of String => JSON::Any)
       {% elsif T.nilable? %}
-        Fm::Generable.type_to_schema({{ T.nilable? }})
+        {% non_nil = T.union_types.reject { |t| t == ::Nil }.first %}
+        Fm::Generable.type_to_schema({{ non_nil }})
       {% elsif T < Array %}
         items = Fm::Generable.type_to_schema({{ T.type_vars[0] }})
         JSON::Any.new({
