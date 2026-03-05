@@ -18,7 +18,7 @@ module Fm
     def initialize(
       @max_tokens : Int32 = DEFAULT_CONTEXT_TOKENS,
       @reserved_response_tokens : Int32 = 0,
-      @chars_per_token : Int32 = 4
+      @chars_per_token : Int32 = 4,
     )
     end
 
@@ -58,7 +58,7 @@ module Fm
       @reserved_response_tokens : Int32,
       @available_tokens : Int32,
       @utilization : Float32,
-      @over_limit : Bool
+      @over_limit : Bool,
     )
     end
   end
@@ -109,7 +109,7 @@ module Fm
       @max_summary_tokens : Int32 = 400,
       @instructions : String = "Summarize the conversation for future context. Preserve user intent, key facts, decisions, and open questions. Keep the summary concise.",
       @summary_options : GenerationOptions = GenerationOptions.new(temperature: 0.2, max_response_tokens: 256_u32),
-      @chars_per_token : Int32 = 4
+      @chars_per_token : Int32 = 4,
     )
     end
   end
@@ -127,7 +127,7 @@ module Fm
   def self.compact_transcript(
     model : SystemLanguageModel,
     transcript_json : String,
-    config : CompactionConfig = CompactionConfig.new
+    config : CompactionConfig = CompactionConfig.new,
   ) : String
     transcript_text = transcript_to_text(transcript_json)
     return "" if transcript_text.strip.empty?
@@ -152,7 +152,7 @@ module Fm
     session : Session,
     limit : ContextLimit,
     config : CompactionConfig = CompactionConfig.new,
-    base_instructions : String? = nil
+    base_instructions : String? = nil,
   ) : CompactedSession?
     transcript_json = session.transcript_json
     usage = context_usage_from_transcript(transcript_json, limit)
@@ -167,7 +167,7 @@ module Fm
   def self.session_from_summary(
     model : SystemLanguageModel,
     base_instructions : String?,
-    summary : String
+    summary : String,
   ) : Session
     instructions = compacted_instructions(base_instructions, summary)
     if instructions
@@ -180,18 +180,21 @@ module Fm
   # Builds instructions text for a compacted session.
   def self.compacted_instructions(base_instructions : String?, summary : String) : String?
     base = base_instructions.try(&.strip) || ""
-    summary = summary.strip
+    stripped_summary = summary.strip
 
-    if base.empty? && summary.empty?
+    if base.empty? && stripped_summary.empty?
       nil
-    elsif !base.empty? && summary.empty?
+    elsif !base.empty? && stripped_summary.empty?
       base
-    elsif base.empty? && !summary.empty?
-      "Conversation summary:\n#{summary}"
+    elsif base.empty? && !stripped_summary.empty?
+      "Conversation summary:\n#{stripped_summary}"
     else
-      "#{base}\n\nConversation summary:\n#{summary}"
+      "#{base}\n\nConversation summary:\n#{stripped_summary}"
     end
   end
+
+  TRANSCRIPT_TEXT_KEYS = {"content", "text", "prompt", "response", "instructions"}
+  TRANSCRIPT_SKIP_KEYS = {"role", "content", "text", "prompt", "response", "instructions"}
 
   # :nodoc:
   private def self.collect_transcript_lines(value : JSON::Any, out lines : Array(String))
@@ -210,7 +213,7 @@ module Fm
         end
       end
 
-      {"content", "text", "prompt", "response", "instructions"}.each do |key|
+      TRANSCRIPT_TEXT_KEYS.each do |key|
         next if processed_content && (key == "content" || key == "text")
         if text = map[key]?.try(&.as_s?)
           lines << text
@@ -218,7 +221,7 @@ module Fm
       end
 
       map.each do |key, val|
-        next if {"role", "content", "text", "prompt", "response", "instructions"}.includes?(key)
+        next if TRANSCRIPT_SKIP_KEYS.includes?(key)
         collect_transcript_lines(val, lines)
       end
     end
@@ -226,13 +229,13 @@ module Fm
 
   # :nodoc:
   private def self.chunk_text(text : String, chunk_tokens : Int32, chars_per_token : Int32) : Array(String)
-    max_chars = {chunk_tokens, 1}.max * {chars_per_token, 1}.max
+    max_bytes = {chunk_tokens, 1}.max * {chars_per_token, 1}.max
     chunks = [] of String
     current = String::Builder.new
 
     text.each_line do |line|
-      line_len = line.size + 1
-      if current.bytesize > 0 && current.bytesize + line_len > max_chars
+      line_bytes = line.bytesize + 1
+      if current.bytesize > 0 && current.bytesize + line_bytes > max_bytes
         chunks << current.to_s.rstrip
         current = String::Builder.new
       end
@@ -250,7 +253,7 @@ module Fm
     current_summary : String,
     chunk : String,
     max_summary_tokens : Int32,
-    chars_per_token : Int32
+    chars_per_token : Int32,
   ) : String
     if current_summary.strip.empty?
       "Summarize the following conversation transcript:\n\n#{chunk}\n\nReturn a concise summary."

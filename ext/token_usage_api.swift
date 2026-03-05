@@ -58,7 +58,7 @@ public func fm_model_token_usage_for(
         }
     }
 
-    // Runtime is older than 26.4; Rust will use local token estimation fallback.
+    // Runtime is older than 26.4; Crystal will use local token estimation fallback.
     _ = errorOut
     return tokenUsageUnavailableSentinel
 }
@@ -94,7 +94,7 @@ public func fm_model_token_usage_for_tools(
         }
     }
 
-    // Runtime is older than 26.4; Rust will use local token estimation fallback.
+    // Runtime is older than 26.4; Crystal will use local token estimation fallback.
     _ = errorOut
     return tokenUsageUnavailableSentinel
 }

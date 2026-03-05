@@ -1,6 +1,6 @@
 import Foundation
 
-/// Returns a sentinel so Rust can use local token estimation.
+/// Returns a sentinel so Crystal can use local token estimation.
 @_cdecl("fm_model_token_usage_for")
 public func fm_model_token_usage_for(
     _ modelPtr: UnsafeMutableRawPointer,
@@ -13,7 +13,7 @@ public func fm_model_token_usage_for(
     return tokenUsageUnavailableSentinel
 }
 
-/// Returns a sentinel so Rust can use local token estimation.
+/// Returns a sentinel so Crystal can use local token estimation.
 @_cdecl("fm_model_token_usage_for_tools")
 public func fm_model_token_usage_for_tools(
     _ modelPtr: UnsafeMutableRawPointer,

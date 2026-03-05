@@ -103,4 +103,12 @@ module Fm
       raise error_from_swift(error_ptr)
     end
   end
+
+  # :nodoc:
+  # Allocates an error output pointer for FFI calls.
+  def self.make_error_ptr : Pointer(Void*)
+    ptr = Pointer(Void*).malloc(1)
+    ptr.value = Pointer(Void).null
+    ptr
+  end
 end

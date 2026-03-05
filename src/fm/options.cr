@@ -27,7 +27,7 @@ module Fm
     def initialize(
       @temperature : Float64? = nil,
       @sampling : Sampling? = nil,
-      @max_response_tokens : UInt32? = nil
+      @max_response_tokens : UInt32? = nil,
     )
     end
 

@@ -47,13 +47,13 @@ module Fm
       tools_json : LibC::Char*,
       user_data : Void*,
       tool_callback : ToolCallback,
-      error_out : Void**
+      error_out : Void**,
     ) : Void*
 
     fun fm_session_from_transcript(
       model : Void*,
       transcript_json : LibC::Char*,
-      error_out : Void**
+      error_out : Void**,
     ) : Void*
 
     fun fm_session_free(session : Void*) : Void
@@ -63,7 +63,7 @@ module Fm
       session : Void*,
       prompt : LibC::Char*,
       options_json : LibC::Char*,
-      error_out : Void**
+      error_out : Void**,
     ) : LibC::Char*
 
     fun fm_session_respond_with_timeout(
@@ -71,7 +71,7 @@ module Fm
       prompt : LibC::Char*,
       options_json : LibC::Char*,
       timeout_ms : UInt64,
-      error_out : Void**
+      error_out : Void**,
     ) : LibC::Char*
 
     # Streaming
@@ -82,7 +82,7 @@ module Fm
       user_data : Void*,
       on_chunk : ChunkCallback,
       on_done : DoneCallback,
-      on_error : ErrorCallback
+      on_error : ErrorCallback,
     ) : Void
 
     fun fm_session_cancel(session : Void*) : Void
@@ -102,7 +102,7 @@ module Fm
       prompt : LibC::Char*,
       schema_json : LibC::Char*,
       options_json : LibC::Char*,
-      error_out : Void**
+      error_out : Void**,
     ) : LibC::Char*
 
     fun fm_session_stream_json(
@@ -113,7 +113,7 @@ module Fm
       user_data : Void*,
       on_chunk : ChunkCallback,
       on_done : DoneCallback,
-      on_error : ErrorCallback
+      on_error : ErrorCallback,
     ) : Void
 
     # String management

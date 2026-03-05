@@ -38,8 +38,7 @@ module Fm
         @tool_box = nil
       end
 
-      error = Pointer(Void*).malloc(1)
-      error.value = Pointer(Void).null
+      error = Fm.make_error_ptr
 
       @ptr = LibFmFfi.fm_session_create(
         model.to_unsafe,
@@ -66,8 +65,7 @@ module Fm
 
     # Creates a session from a transcript JSON string.
     def self.from_transcript(model : SystemLanguageModel, transcript_json : String) : self
-      error = Pointer(Void*).malloc(1)
-      error.value = Pointer(Void).null
+      error = Fm.make_error_ptr
 
       ptr = LibFmFfi.fm_session_from_transcript(
         model.to_unsafe,
@@ -100,8 +98,7 @@ module Fm
     def respond(prompt : String, options : GenerationOptions = GenerationOptions.default) : Response
       options_json = options.to_json
 
-      error = Pointer(Void*).malloc(1)
-      error.value = Pointer(Void).null
+      error = Fm.make_error_ptr
 
       response_ptr = LibFmFfi.fm_session_respond(
         @ptr,
@@ -131,8 +128,7 @@ module Fm
 
       options_json = options.to_json
 
-      error = Pointer(Void*).malloc(1)
-      error.value = Pointer(Void).null
+      error = Fm.make_error_ptr
 
       response_ptr = LibFmFfi.fm_session_respond_with_timeout(
         @ptr,
@@ -180,7 +176,7 @@ module Fm
       )
 
       if err = state.error
-        raise GenerationError.new(err)
+        raise self.class.error_from_stream(state.error_code, err)
       end
     end
 
@@ -196,8 +192,7 @@ module Fm
 
     # Gets the session transcript as a JSON string.
     def transcript_json : String
-      error = Pointer(Void*).malloc(1)
-      error.value = Pointer(Void).null
+      error = Fm.make_error_ptr
 
       ptr = LibFmFfi.fm_session_get_transcript(@ptr, error)
 
@@ -227,8 +222,7 @@ module Fm
     def respond_json(prompt : String, schema_json : String, options : GenerationOptions = GenerationOptions.default) : String
       options_json = options.to_json
 
-      error = Pointer(Void*).malloc(1)
-      error.value = Pointer(Void).null
+      error = Fm.make_error_ptr
 
       response_ptr = LibFmFfi.fm_session_respond_json(
         @ptr,
@@ -290,7 +284,17 @@ module Fm
       )
 
       if err = state.error
-        raise GenerationError.new(err)
+        raise self.class.error_from_stream(state.error_code, err)
+      end
+    end
+
+    # :nodoc:
+    protected def self.error_from_stream(code : Int32, message : String) : Error
+      case code
+      when 3 then GenerationError.new("Operation cancelled")
+      when 4 then ToolCallError.new("unknown", message)
+      when 6 then TimeoutError.new(message)
+      else        GenerationError.new(message)
       end
     end
 
@@ -306,6 +310,7 @@ module Fm
     # :nodoc:
     class StreamState
       property error : String?
+      property error_code : Int32 = 0
       getter on_chunk : String ->
 
       def initialize(@on_chunk : String ->)
@@ -330,6 +335,7 @@ module Fm
       state = Box(StreamState).unbox(user_data)
       msg = message.null? ? "Streaming error (no message)" : String.new(message)
       state.error = msg
+      state.error_code = code
     end
 
     # -- Tool callback --

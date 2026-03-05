@@ -22,8 +22,7 @@ module Fm
     @ptr : Void*
 
     def initialize
-      error = Pointer(Void*).malloc(1)
-      error.value = Pointer(Void).null
+      error = Fm.make_error_ptr
 
       @ptr = LibFmFfi.fm_model_default(error)
 
@@ -83,8 +82,7 @@ module Fm
     # end
     # ```
     def token_usage_for(prompt : String) : Int64?
-      error = Pointer(Void*).malloc(1)
-      error.value = Pointer(Void).null
+      error = Fm.make_error_ptr
 
       result = LibFmFfi.fm_model_token_usage_for(@ptr, prompt.to_unsafe, error)
 
@@ -104,8 +102,7 @@ module Fm
     # end
     # ```
     def token_usage_for_tools(instructions : String, tools_json : String? = nil) : Int64?
-      error = Pointer(Void*).malloc(1)
-      error.value = Pointer(Void).null
+      error = Fm.make_error_ptr
 
       tools_ptr = tools_json ? tools_json.to_unsafe : Pointer(LibC::Char).null
 
