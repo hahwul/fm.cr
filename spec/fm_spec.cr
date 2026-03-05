@@ -311,6 +311,64 @@ describe Fm do
       config.chars_per_token.should eq 4
       config.instructions.should contain("Summarize")
     end
+
+    it "accepts custom values" do
+      opts = Fm::GenerationOptions.new(temperature: 0.5)
+      config = Fm::CompactionConfig.new(
+        chunk_tokens: 500,
+        max_summary_tokens: 200,
+        instructions: "Custom instructions",
+        summary_options: opts,
+        chars_per_token: 2
+      )
+      config.chunk_tokens.should eq 500
+      config.max_summary_tokens.should eq 200
+      config.instructions.should eq "Custom instructions"
+      config.chars_per_token.should eq 2
+    end
+  end
+
+  describe Fm::ContextUsage do
+    it "computes utilization correctly at boundary" do
+      json = %([{"role":"user","content":"Hello"}])
+      limit = Fm::ContextLimit.new(max_tokens: 10, reserved_response_tokens: 0, chars_per_token: 4)
+      usage = Fm.context_usage_from_transcript(json, limit)
+      usage.utilization.should be <= 1.0
+      usage.over_limit?.should be_false
+    end
+
+    it "handles zero max_tokens" do
+      json = %([{"role":"user","content":"Hi"}])
+      limit = Fm::ContextLimit.new(max_tokens: 0, reserved_response_tokens: 0)
+      usage = Fm.context_usage_from_transcript(json, limit)
+      usage.utilization.should eq 0.0_f32
+      usage.available_tokens.should eq 0
+      usage.over_limit?.should be_true
+    end
+  end
+
+  describe Fm::Tool do
+    it "serializes multiple tools to JSON" do
+      tool1 = TestTool.new
+      tools = [tool1, tool1] of Fm::Tool
+      json = Fm::Tool.tools_to_json(tools)
+      parsed = JSON.parse(json)
+      parsed.as_a.size.should eq 2
+    end
+  end
+
+  describe Fm::ToolOutput do
+    it "handles empty string content" do
+      output = Fm::ToolOutput.new("")
+      output.content.should eq ""
+    end
+
+    it "handles complex JSON content" do
+      json = JSON.parse(%({"items":[1,2,3],"nested":{"key":"val"}}))
+      output = Fm::ToolOutput.new(json: json)
+      parsed = JSON.parse(output.content)
+      parsed["items"].as_a.size.should eq 3
+    end
   end
 
   describe "ModelAvailability enum" do
