@@ -126,6 +126,16 @@ describe Fm do
     end
   end
 
+  describe "ModelAvailability enum" do
+    it "has all expected values" do
+      Fm::ModelAvailability::Available.value.should eq 0
+      Fm::ModelAvailability::DeviceNotEligible.value.should eq 1
+      Fm::ModelAvailability::AppleIntelligenceNotEnabled.value.should eq 2
+      Fm::ModelAvailability::ModelNotReady.value.should eq 3
+      Fm::ModelAvailability::Unknown.value.should eq 4
+    end
+  end
+
   describe Fm::Generable do
     it "generates JSON schema" do
       schema = TestPerson.json_schema

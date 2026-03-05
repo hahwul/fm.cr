@@ -63,13 +63,62 @@ module Fm
     # Raises an error if the model is not available.
     def ensure_available! : Nil
       case availability
-      when .available?             then nil
-      when .device_not_eligible?   then raise DeviceNotEligibleError.new
+      when .available?           then nil
+      when .device_not_eligible? then raise DeviceNotEligibleError.new
       when .apple_intelligence_not_enabled?
         raise AppleIntelligenceNotEnabledError.new
-      when .model_not_ready?       then raise ModelNotReadyError.new
-      else                              raise ModelNotAvailableError.new("Model is not available")
+      when .model_not_ready? then raise ModelNotReadyError.new
+      else                        raise ModelNotAvailableError.new("Model is not available")
       end
+    end
+
+    # Returns the token usage for a given prompt string.
+    #
+    # Requires macOS 26.4+ at runtime. Returns `nil` if the API is
+    # unavailable on the current OS version.
+    #
+    # ```
+    # if tokens = model.token_usage_for("Hello, world!")
+    #   puts "Tokens: #{tokens}"
+    # end
+    # ```
+    def token_usage_for(prompt : String) : Int64?
+      error = Pointer(Void*).malloc(1)
+      error.value = Pointer(Void).null
+
+      result = LibFmFfi.fm_model_token_usage_for(@ptr, prompt.to_unsafe, error)
+
+      Fm.check_error!(error.value)
+
+      result == -2_i64 ? nil : result
+    end
+
+    # Returns the token usage for instructions and tools configuration.
+    #
+    # Requires macOS 26.4+ at runtime. Returns `nil` if the API is
+    # unavailable on the current OS version.
+    #
+    # ```
+    # if tokens = model.token_usage_for_tools("Be helpful.", tools_json)
+    #   puts "Tokens: #{tokens}"
+    # end
+    # ```
+    def token_usage_for_tools(instructions : String, tools_json : String? = nil) : Int64?
+      error = Pointer(Void*).malloc(1)
+      error.value = Pointer(Void).null
+
+      tools_ptr = tools_json ? tools_json.to_unsafe : Pointer(LibC::Char).null
+
+      result = LibFmFfi.fm_model_token_usage_for_tools(
+        @ptr,
+        instructions.to_unsafe,
+        tools_ptr,
+        error
+      )
+
+      Fm.check_error!(error.value)
+
+      result == -2_i64 ? nil : result
     end
 
     def finalize
