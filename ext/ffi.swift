@@ -255,57 +255,36 @@ public func fm_model_free(_ modelPtr: UnsafeMutableRawPointer?) {
     Unmanaged<AnyObject>.fromOpaque(modelPtr).release()
 }
 
-// MARK: - Adapter
+// MARK: - Adapter (deprecated - AdapterAsset removed in macOS 26.2 SDK)
 
-/// Wrapper for AdapterAsset (value type) to use with Unmanaged.
-private final class AdapterBox: @unchecked Sendable {
-    let asset: AdapterAsset
-    init(_ asset: AdapterAsset) {
-        self.asset = asset
-    }
-}
-
-/// Creates an adapter from a file path.
+/// Creates an adapter from a file path. (no-op, adapters no longer supported)
 @_cdecl("fm_adapter_create_from_path")
 public func fm_adapter_create_from_path(
     _ path: UnsafePointer<CChar>,
     _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
 ) -> UnsafeMutableRawPointer? {
-    let pathString = String(cString: path)
-    let url = URL(fileURLWithPath: pathString)
-    do {
-        let asset = try AdapterAsset(contentsOf: url)
-        return Unmanaged.passRetained(AdapterBox(asset) as AnyObject).toOpaque()
-    } catch {
-        if let errorOut = errorOut {
-            errorOut.pointee = createError(
-                "Failed to load adapter from path '\(pathString)': \(error.localizedDescription)",
-                code: .invalidInput
-            )
-        }
-        return nil
+    if let errorOut = errorOut {
+        errorOut.pointee = createError(
+            "AdapterAsset is no longer available in this SDK version",
+            code: .invalidInput
+        )
     }
+    return nil
 }
 
-/// Creates an adapter from a bundle asset name.
+/// Creates an adapter from a bundle asset name. (no-op, adapters no longer supported)
 @_cdecl("fm_adapter_create_from_asset")
 public func fm_adapter_create_from_asset(
     _ name: UnsafePointer<CChar>,
     _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
 ) -> UnsafeMutableRawPointer? {
-    let assetName = String(cString: name)
-    do {
-        let asset = try AdapterAsset(named: assetName)
-        return Unmanaged.passRetained(AdapterBox(asset) as AnyObject).toOpaque()
-    } catch {
-        if let errorOut = errorOut {
-            errorOut.pointee = createError(
-                "Failed to load adapter '\(assetName)': \(error.localizedDescription)",
-                code: .invalidInput
-            )
-        }
-        return nil
+    if let errorOut = errorOut {
+        errorOut.pointee = createError(
+            "AdapterAsset is no longer available in this SDK version",
+            code: .invalidInput
+        )
     }
+    return nil
 }
 
 /// Frees an adapter.
@@ -695,17 +674,6 @@ public func fm_session_create(
         instructionsValue = nil
     }
 
-    // Extract adapters
-    var adapters: [AdapterAsset] = []
-    if let adapterPtrs = adapterPtrs, adapterCount > 0 {
-        for i in 0..<Int(adapterCount) {
-            if let ptr = adapterPtrs[i] {
-                let box = Unmanaged<AnyObject>.fromOpaque(ptr).takeUnretainedValue() as! AdapterBox
-                adapters.append(box.asset)
-            }
-        }
-    }
-
     // Parse tool definitions and create dispatcher + bridge
     let toolDefinitions: [ToolDefinitionDTO]
     do {
@@ -736,13 +704,13 @@ public func fm_session_create(
         toolBridge = nil
     }
 
-    // Build session with adapters, tools, and instructions
+    // Build session with tools and instructions
     let toolsArray: [any Tool] = toolBridge.map { [$0] } ?? []
     let session: LanguageModelSession
     if let inst = instructionsValue {
-        session = LanguageModelSession(model: model, adapters: adapters, tools: toolsArray, instructions: inst)
-    } else if !adapters.isEmpty || !toolsArray.isEmpty {
-        session = LanguageModelSession(model: model, adapters: adapters, tools: toolsArray)
+        session = LanguageModelSession(model: model, tools: toolsArray, instructions: inst)
+    } else if !toolsArray.isEmpty {
+        session = LanguageModelSession(model: model, tools: toolsArray)
     } else {
         session = LanguageModelSession(model: model)
     }
@@ -774,25 +742,6 @@ public func fm_session_from_transcript(
         return nil
     }
 
-    // Parse instructions
-    let instructionsValue: Instructions?
-    if let instructions = instructions {
-        instructionsValue = Instructions(String(cString: instructions))
-    } else {
-        instructionsValue = nil
-    }
-
-    // Extract adapters
-    var adapters: [AdapterAsset] = []
-    if let adapterPtrs = adapterPtrs, adapterCount > 0 {
-        for i in 0..<Int(adapterCount) {
-            if let ptr = adapterPtrs[i] {
-                let box = Unmanaged<AnyObject>.fromOpaque(ptr).takeUnretainedValue() as! AdapterBox
-                adapters.append(box.asset)
-            }
-        }
-    }
-
     // Parse tools
     let toolDefinitions: [ToolDefinitionDTO]
     do {
@@ -820,10 +769,8 @@ public func fm_session_from_transcript(
         let toolsArray: [any Tool] = toolBridge.map { [$0] } ?? []
 
         let session: LanguageModelSession
-        if let inst = instructionsValue {
-            session = LanguageModelSession(model: model, adapters: adapters, tools: toolsArray, instructions: inst, transcript: transcript)
-        } else if !adapters.isEmpty || !toolsArray.isEmpty {
-            session = LanguageModelSession(model: model, adapters: adapters, tools: toolsArray, transcript: transcript)
+        if !toolsArray.isEmpty {
+            session = LanguageModelSession(model: model, tools: toolsArray, transcript: transcript)
         } else {
             session = LanguageModelSession(model: model, transcript: transcript)
         }
@@ -1083,8 +1030,7 @@ private func parseGenerationOptions(_ optionsJson: UnsafePointer<CChar>?) -> Gen
         return GenerationOptions(
             sampling: decoded.sampling == "greedy" ? .greedy : nil,
             temperature: decoded.temperature,
-            maximumResponseTokens: decoded.maximumResponseTokens.map { Int($0) },
-            seed: decoded.seed.map { Int($0) }
+            maximumResponseTokens: decoded.maximumResponseTokens.map { Int($0) }
         )
     } catch {
         return GenerationOptions()
