@@ -14,7 +14,8 @@ weight = 4
 Fm::GenerationOptions.new(
   temperature : Float64? = nil,
   sampling : Fm::Sampling? = nil,
-  max_response_tokens : UInt32? = nil
+  max_response_tokens : UInt32? = nil,
+  seed : UInt64? = nil
 )
 ```
 
@@ -25,6 +26,7 @@ All parameters are optional. When `nil`, the model uses its default values.
 | `temperature` | `Float64?` | `nil` | Sampling temperature (0.0 - 2.0) |
 | `sampling` | `Sampling?` | `nil` | Sampling strategy |
 | `max_response_tokens` | `UInt32?` | `nil` | Maximum tokens in the response |
+| `seed` | `UInt64?` | `nil` | Random seed for reproducible output |
 
 ## Class Methods
 
@@ -43,6 +45,7 @@ Returns an instance with all parameters set to `nil`, using the model's defaults
 | `temperature` | `Float64?` | Controls randomness. Lower values are more deterministic. |
 | `sampling` | `Sampling?` | The sampling strategy to use. |
 | `max_response_tokens` | `UInt32?` | Limits the length of the generated response. |
+| `seed` | `UInt64?` | Random seed for reproducible output. |
 
 ## Fm::Sampling
 
@@ -69,6 +72,16 @@ options = Fm::GenerationOptions.new(
 options = Fm::GenerationOptions.new(
   temperature: 0.0,
   sampling: Fm::Sampling::Greedy
+)
+```
+
+### Reproducible output
+
+```crystal
+options = Fm::GenerationOptions.new(
+  temperature: 0.0,
+  sampling: Fm::Sampling::Greedy,
+  seed: 42_u64
 )
 ```
 

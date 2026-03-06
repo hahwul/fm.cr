@@ -22,7 +22,7 @@ end
 puts
 ```
 
-Each `chunk` is a `String` containing the next piece of generated text.
+Each `chunk` is a `String` containing only the new text delta for that iteration -- not the full accumulated response. You can concatenate chunks yourself if you need the complete text.
 
 ## Streaming with Options
 

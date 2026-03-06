@@ -43,6 +43,13 @@ A `Session` holds conversation state between you and the model. You can provide 
 session = Fm::Session.new(model, instructions: "You are a helpful assistant.")
 ```
 
+You can also attach adapters to customize model behavior:
+
+```crystal
+adapter = Fm::Adapter.new(path: "/path/to/adapter.mlpackage")
+session = Fm::Session.new(model, instructions: "You are a helpful assistant.", adapters: [adapter])
+```
+
 Sessions maintain multi-turn conversation context automatically.
 
 ## Generating Responses
@@ -75,7 +82,8 @@ Customize temperature, sampling strategy, and max tokens:
 options = Fm::GenerationOptions.new(
   temperature: 0.8,
   sampling: Fm::Sampling::Random,
-  max_response_tokens: 500_u32
+  max_response_tokens: 500_u32,
+  seed: 42_u64  # optional: set a seed for reproducible output
 )
 
 response = session.respond("Write a haiku.", options)

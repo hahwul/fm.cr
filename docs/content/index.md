@@ -22,6 +22,7 @@ fm.cr provides a Crystal interface to Apple's on-device language model through a
 - **Text Generation** -- Synchronous and streaming responses
 - **Structured Output** -- Type-safe responses using `Generable` or raw JSON schemas
 - **Tool Calling** -- Extend model capabilities with custom tools
+- **Adapters** -- Load custom adapters from file paths or bundle assets to customize model behavior
 - **Context Management** -- Transcript export, token estimation, and automatic compaction
 - **Session Restore** -- Save and restore conversation state via transcripts
 

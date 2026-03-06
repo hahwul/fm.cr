@@ -68,6 +68,25 @@ Raises an appropriate error if the model is not available:
 - `ModelNotReadyError` when the model is still downloading
 - `ModelNotAvailableError` for unknown unavailability
 
+### `#wait_until_available`
+
+```crystal
+model.wait_until_available(timeout : Time::Span) : Nil
+```
+
+Blocks until the model becomes available or the timeout is exceeded. Raises `Fm::TimeoutError` if the model is not available within the given duration.
+
+This is especially useful when the model is in the `ModelNotReady` state (still downloading). Instead of polling `available?` manually, you can wait for readiness in a single call:
+
+```crystal
+begin
+  model.wait_until_available(timeout: 60.seconds)
+  puts "Model is ready!"
+rescue ex : Fm::TimeoutError
+  puts "Model did not become available in time."
+end
+```
+
 ### `#token_usage_for`
 
 ```crystal

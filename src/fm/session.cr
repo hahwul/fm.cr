@@ -14,15 +14,16 @@ module Fm
   # puts response.content
   # ```
   class Session
-    # Creates a new session with optional instructions and/or tools.
+    # Creates a new session with optional instructions, tools, and/or adapters.
     #
     # ```
     # session = Fm::Session.new(model)
     # session = Fm::Session.new(model, instructions: "Be helpful.")
     # session = Fm::Session.new(model, tools: [my_tool])
-    # session = Fm::Session.new(model, instructions: "Be helpful.", tools: [my_tool])
+    # session = Fm::Session.new(model, adapters: [my_adapter])
+    # session = Fm::Session.new(model, instructions: "Be helpful.", tools: [my_tool], adapters: [my_adapter])
     # ```
-    def initialize(model : SystemLanguageModel, *, instructions : String? = nil, tools : Array(Tool)? = nil)
+    def initialize(model : SystemLanguageModel, *, instructions : String? = nil, tools : Array(Tool)? = nil, adapters : Array(Adapter)? = nil)
       instructions_ptr = instructions ? instructions.to_unsafe : Pointer(LibC::Char).null
       tools_json_ptr = Pointer(LibC::Char).null
       user_data = Pointer(Void).null
@@ -38,11 +39,26 @@ module Fm
         @tool_box = nil
       end
 
+      # Prepare adapter pointers
+      @adapters = adapters
+      adapter_ptrs = Pointer(Void*).null
+      adapter_count = 0_i32
+
+      if adapters && !adapters.empty?
+        adapter_count = adapters.size.to_i32
+        adapter_ptrs = Pointer(Void*).malloc(adapter_count)
+        adapters.each_with_index do |adapter, i|
+          adapter_ptrs[i] = adapter.to_unsafe
+        end
+      end
+
       error = Fm.make_error_ptr
 
       @ptr = LibFmFfi.fm_session_create(
         model.to_unsafe,
         instructions_ptr,
+        adapter_ptrs,
+        adapter_count,
         tools_json_ptr,
         user_data,
         ->Session.tool_callback(Void*, LibC::Char*, LibC::Char*),
@@ -60,16 +76,66 @@ module Fm
     end
 
     # :nodoc:
-    protected def initialize(@ptr : Void*, @tool_box : Void*?)
+    protected def initialize(@ptr : Void*, @tool_box : Void*?, @adapters : Array(Adapter)? = nil)
     end
 
     # Creates a session from a transcript JSON string.
-    def self.from_transcript(model : SystemLanguageModel, transcript_json : String) : self
+    #
+    # Optionally restores instructions, tools, and adapters so the
+    # resumed session behaves identically to the original.
+    #
+    # ```
+    # json = session.transcript_json
+    # restored = Fm::Session.from_transcript(model, json,
+    #   instructions: "Be helpful.",
+    #   tools: [my_tool],
+    #   adapters: [my_adapter],
+    # )
+    # ```
+    def self.from_transcript(
+      model : SystemLanguageModel,
+      transcript_json : String,
+      *,
+      instructions : String? = nil,
+      tools : Array(Tool)? = nil,
+      adapters : Array(Adapter)? = nil,
+    ) : self
+      instructions_ptr = instructions ? instructions.to_unsafe : Pointer(LibC::Char).null
+      tools_json_ptr = Pointer(LibC::Char).null
+      user_data = Pointer(Void).null
+      tool_box : Void*? = nil
+
+      if tools && !tools.empty?
+        tools_json = Tool.tools_to_json(tools)
+        tools_json_ptr = tools_json.to_unsafe
+
+        boxed = Box(Array(Tool)).box(tools)
+        tool_box = boxed
+        user_data = boxed
+      end
+
+      adapter_ptrs = Pointer(Void*).null
+      adapter_count = 0_i32
+
+      if adapters && !adapters.empty?
+        adapter_count = adapters.size.to_i32
+        adapter_ptrs = Pointer(Void*).malloc(adapter_count)
+        adapters.each_with_index do |adapter, i|
+          adapter_ptrs[i] = adapter.to_unsafe
+        end
+      end
+
       error = Fm.make_error_ptr
 
       ptr = LibFmFfi.fm_session_from_transcript(
         model.to_unsafe,
         transcript_json.to_unsafe,
+        instructions_ptr,
+        adapter_ptrs,
+        adapter_count,
+        tools_json_ptr,
+        user_data,
+        ->Session.tool_callback(Void*, LibC::Char*, LibC::Char*),
         error
       )
 
@@ -81,7 +147,7 @@ module Fm
         )
       end
 
-      new(ptr, nil)
+      new(ptr, tool_box, adapters)
     end
 
     # :nodoc:

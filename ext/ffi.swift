@@ -217,11 +217,102 @@ public func fm_model_availability(_ modelPtr: UnsafeMutableRawPointer) -> Int32 
     }
 }
 
+/// Blocks until the model becomes available or the timeout (ms) expires.
+/// Returns 0 on success. On timeout, sets error and returns current availability code.
+@_cdecl("fm_model_wait_until_available")
+public func fm_model_wait_until_available(
+    _ modelPtr: UnsafeMutableRawPointer,
+    _ timeoutMs: UInt64,
+    _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
+) -> Int32 {
+    let model = Unmanaged<AnyObject>.fromOpaque(modelPtr).takeUnretainedValue() as! SystemLanguageModel
+
+    // Already available
+    if case .available = model.availability { return 0 }
+
+    let pollInterval: TimeInterval = 0.5
+    let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
+
+    while Date() < deadline {
+        if case .available = model.availability { return 0 }
+        Thread.sleep(forTimeInterval: pollInterval)
+    }
+
+    // Timed out
+    if let errorOut = errorOut {
+        errorOut.pointee = createError(
+            "Timed out waiting for model to become available after \(timeoutMs) ms",
+            code: .timeout
+        )
+    }
+    return fm_model_availability(modelPtr)
+}
+
 /// Frees a SystemLanguageModel.
 @_cdecl("fm_model_free")
 public func fm_model_free(_ modelPtr: UnsafeMutableRawPointer?) {
     guard let modelPtr = modelPtr else { return }
     Unmanaged<AnyObject>.fromOpaque(modelPtr).release()
+}
+
+// MARK: - Adapter
+
+/// Wrapper for AdapterAsset (value type) to use with Unmanaged.
+private final class AdapterBox: @unchecked Sendable {
+    let asset: AdapterAsset
+    init(_ asset: AdapterAsset) {
+        self.asset = asset
+    }
+}
+
+/// Creates an adapter from a file path.
+@_cdecl("fm_adapter_create_from_path")
+public func fm_adapter_create_from_path(
+    _ path: UnsafePointer<CChar>,
+    _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
+) -> UnsafeMutableRawPointer? {
+    let pathString = String(cString: path)
+    let url = URL(fileURLWithPath: pathString)
+    do {
+        let asset = try AdapterAsset(contentsOf: url)
+        return Unmanaged.passRetained(AdapterBox(asset) as AnyObject).toOpaque()
+    } catch {
+        if let errorOut = errorOut {
+            errorOut.pointee = createError(
+                "Failed to load adapter from path '\(pathString)': \(error.localizedDescription)",
+                code: .invalidInput
+            )
+        }
+        return nil
+    }
+}
+
+/// Creates an adapter from a bundle asset name.
+@_cdecl("fm_adapter_create_from_asset")
+public func fm_adapter_create_from_asset(
+    _ name: UnsafePointer<CChar>,
+    _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
+) -> UnsafeMutableRawPointer? {
+    let assetName = String(cString: name)
+    do {
+        let asset = try AdapterAsset(named: assetName)
+        return Unmanaged.passRetained(AdapterBox(asset) as AnyObject).toOpaque()
+    } catch {
+        if let errorOut = errorOut {
+            errorOut.pointee = createError(
+                "Failed to load adapter '\(assetName)': \(error.localizedDescription)",
+                code: .invalidInput
+            )
+        }
+        return nil
+    }
+}
+
+/// Frees an adapter.
+@_cdecl("fm_adapter_free")
+public func fm_adapter_free(_ ptr: UnsafeMutableRawPointer?) {
+    guard let ptr = ptr else { return }
+    Unmanaged<AnyObject>.fromOpaque(ptr).release()
 }
 
 // MARK: - Tool Definition from JSON
@@ -587,6 +678,8 @@ private final class SessionState: @unchecked Sendable {
 public func fm_session_create(
     _ modelPtr: UnsafeMutableRawPointer,
     _ instructions: UnsafePointer<CChar>?,
+    _ adapterPtrs: UnsafeMutablePointer<UnsafeMutableRawPointer?>?,
+    _ adapterCount: Int32,
     _ toolsJson: UnsafePointer<CChar>?,
     _ userData: UnsafeMutableRawPointer?,
     _ toolCallback: @escaping @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?,
@@ -600,6 +693,17 @@ public func fm_session_create(
         instructionsValue = Instructions(String(cString: instructions))
     } else {
         instructionsValue = nil
+    }
+
+    // Extract adapters
+    var adapters: [AdapterAsset] = []
+    if let adapterPtrs = adapterPtrs, adapterCount > 0 {
+        for i in 0..<Int(adapterCount) {
+            if let ptr = adapterPtrs[i] {
+                let box = Unmanaged<AnyObject>.fromOpaque(ptr).takeUnretainedValue() as! AdapterBox
+                adapters.append(box.asset)
+            }
+        }
     }
 
     // Parse tool definitions and create dispatcher + bridge
@@ -632,31 +736,32 @@ public func fm_session_create(
         toolBridge = nil
     }
 
-    // Create session with tool bridge if tools are defined
+    // Build session with adapters, tools, and instructions
+    let toolsArray: [any Tool] = toolBridge.map { [$0] } ?? []
     let session: LanguageModelSession
-    if let bridge = toolBridge {
-        if let instructionsValue = instructionsValue {
-            session = LanguageModelSession(model: model, tools: [bridge], instructions: instructionsValue)
-        } else {
-            session = LanguageModelSession(model: model, tools: [bridge])
-        }
+    if let inst = instructionsValue {
+        session = LanguageModelSession(model: model, adapters: adapters, tools: toolsArray, instructions: inst)
+    } else if !adapters.isEmpty || !toolsArray.isEmpty {
+        session = LanguageModelSession(model: model, adapters: adapters, tools: toolsArray)
     } else {
-        if let instructionsValue = instructionsValue {
-            session = LanguageModelSession(model: model, instructions: instructionsValue)
-        } else {
-            session = LanguageModelSession(model: model)
-        }
+        session = LanguageModelSession(model: model)
     }
 
     let state = SessionState(session: session, toolDispatcher: toolDispatcher)
     return Unmanaged.passRetained(state as AnyObject).toOpaque()
 }
 
-/// Creates a session from a transcript JSON string.
+/// Creates a session from a transcript JSON string, with optional instructions, adapters, and tools.
 @_cdecl("fm_session_from_transcript")
 public func fm_session_from_transcript(
     _ modelPtr: UnsafeMutableRawPointer,
     _ transcriptJson: UnsafePointer<CChar>,
+    _ instructions: UnsafePointer<CChar>?,
+    _ adapterPtrs: UnsafeMutablePointer<UnsafeMutableRawPointer?>?,
+    _ adapterCount: Int32,
+    _ toolsJson: UnsafePointer<CChar>?,
+    _ userData: UnsafeMutableRawPointer?,
+    _ toolCallback: @escaping @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>?,
     _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
 ) -> UnsafeMutableRawPointer? {
     let model = Unmanaged<AnyObject>.fromOpaque(modelPtr).takeUnretainedValue() as! SystemLanguageModel
@@ -669,10 +774,61 @@ public func fm_session_from_transcript(
         return nil
     }
 
+    // Parse instructions
+    let instructionsValue: Instructions?
+    if let instructions = instructions {
+        instructionsValue = Instructions(String(cString: instructions))
+    } else {
+        instructionsValue = nil
+    }
+
+    // Extract adapters
+    var adapters: [AdapterAsset] = []
+    if let adapterPtrs = adapterPtrs, adapterCount > 0 {
+        for i in 0..<Int(adapterCount) {
+            if let ptr = adapterPtrs[i] {
+                let box = Unmanaged<AnyObject>.fromOpaque(ptr).takeUnretainedValue() as! AdapterBox
+                adapters.append(box.asset)
+            }
+        }
+    }
+
+    // Parse tools
+    let toolDefinitions: [ToolDefinitionDTO]
+    do {
+        toolDefinitions = try parseToolDefinitions(toolsJson)
+    } catch {
+        if let errorOut = errorOut {
+            errorOut.pointee = createError("Failed to decode tools JSON: \(error.localizedDescription)", code: .invalidInput)
+        }
+        return nil
+    }
+
+    let toolDispatcher: ToolDispatcher?
+    let toolBridge: GenericToolBridge?
+    if !toolDefinitions.isEmpty {
+        let dispatcher = ToolDispatcher(toolDefinitions: toolDefinitions, userData: userData, callback: toolCallback)
+        toolDispatcher = dispatcher
+        toolBridge = GenericToolBridge(dispatcher: dispatcher)
+    } else {
+        toolDispatcher = nil
+        toolBridge = nil
+    }
+
     do {
         let transcript = try JSONDecoder().decode(Transcript.self, from: jsonData)
-        let session = LanguageModelSession(model: model, transcript: transcript)
-        let state = SessionState(session: session)
+        let toolsArray: [any Tool] = toolBridge.map { [$0] } ?? []
+
+        let session: LanguageModelSession
+        if let inst = instructionsValue {
+            session = LanguageModelSession(model: model, adapters: adapters, tools: toolsArray, instructions: inst, transcript: transcript)
+        } else if !adapters.isEmpty || !toolsArray.isEmpty {
+            session = LanguageModelSession(model: model, adapters: adapters, tools: toolsArray, transcript: transcript)
+        } else {
+            session = LanguageModelSession(model: model, transcript: transcript)
+        }
+
+        let state = SessionState(session: session, toolDispatcher: toolDispatcher)
         return Unmanaged.passRetained(state as AnyObject).toOpaque()
     } catch {
         if let errorOut = errorOut {
@@ -773,12 +929,18 @@ public func fm_session_stream(
     let task = Task.detached {
         do {
             let stream = state.session.streamResponse(to: promptString, options: options)
+            var previousLength = 0
 
             for try await partialResponse in stream {
                 let content = partialResponse.content
-                callbackQueue.sync {
-                    content.withCString { ptr in
-                        onChunk(userData, ptr)
+                let delta = String(content.dropFirst(previousLength))
+                previousLength = content.count
+
+                if !delta.isEmpty {
+                    callbackQueue.sync {
+                        delta.withCString { ptr in
+                            onChunk(userData, ptr)
+                        }
                     }
                 }
 
@@ -918,11 +1080,11 @@ private func parseGenerationOptions(_ optionsJson: UnsafePointer<CChar>?) -> Gen
     do {
         let decoded = try JSONDecoder().decode(GenerationOptionsDTO.self, from: jsonData)
 
-        // Note: seed is not supported in current GenerationOptions API
         return GenerationOptions(
             sampling: decoded.sampling == "greedy" ? .greedy : nil,
             temperature: decoded.temperature,
-            maximumResponseTokens: decoded.maximumResponseTokens.map { Int($0) }
+            maximumResponseTokens: decoded.maximumResponseTokens.map { Int($0) },
+            seed: decoded.seed.map { Int($0) }
         )
     } catch {
         return GenerationOptions()
@@ -1014,12 +1176,18 @@ public func fm_session_stream_json(
     let task = Task.detached {
         do {
             let stream = state.session.streamResponse(to: structuredPrompt, options: options)
+            var previousLength = 0
 
             for try await partialResponse in stream {
                 let content = partialResponse.content
-                callbackQueue.sync {
-                    content.withCString { ptr in
-                        onChunk(userData, ptr)
+                let delta = String(content.dropFirst(previousLength))
+                previousLength = content.count
+
+                if !delta.isEmpty {
+                    callbackQueue.sync {
+                        delta.withCString { ptr in
+                            onChunk(userData, ptr)
+                        }
                     }
                 }
 

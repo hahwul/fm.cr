@@ -34,17 +34,26 @@ module Fm
     fun fm_model_create(use_case : Int32, guardrails : Int32, error_out : Void**) : Void*
     fun fm_model_is_available(model : Void*) : Bool
     fun fm_model_availability(model : Void*) : Int32
+    fun fm_model_wait_until_available(model : Void*, timeout_ms : UInt64, error_out : Void**) : Int32
     fun fm_model_free(model : Void*) : Void
 
     # Token usage
     fun fm_model_token_usage_for(model : Void*, prompt : LibC::Char*, error_out : Void**) : Int64
     fun fm_model_token_usage_for_tools(model : Void*, instructions : LibC::Char*, tools_json : LibC::Char*, error_out : Void**) : Int64
 
+    # -- Adapter functions --
+
+    fun fm_adapter_create_from_path(path : LibC::Char*, error_out : Void**) : Void*
+    fun fm_adapter_create_from_asset(name : LibC::Char*, error_out : Void**) : Void*
+    fun fm_adapter_free(adapter : Void*) : Void
+
     # -- Session functions --
 
     fun fm_session_create(
       model : Void*,
       instructions : LibC::Char*,
+      adapter_ptrs : Void**,
+      adapter_count : Int32,
       tools_json : LibC::Char*,
       user_data : Void*,
       tool_callback : ToolCallback,
@@ -54,6 +63,12 @@ module Fm
     fun fm_session_from_transcript(
       model : Void*,
       transcript_json : LibC::Char*,
+      instructions : LibC::Char*,
+      adapter_ptrs : Void**,
+      adapter_count : Int32,
+      tools_json : LibC::Char*,
+      user_data : Void*,
+      tool_callback : ToolCallback,
       error_out : Void**,
     ) : Void*
 

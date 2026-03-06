@@ -17,7 +17,8 @@ Fm::Session.new(
   model : Fm::SystemLanguageModel,
   *,
   instructions : String? = nil,
-  tools : Array(Fm::Tool)? = nil
+  tools : Array(Fm::Tool)? = nil,
+  adapters : Array(Fm::Adapter)? = nil
 )
 ```
 
@@ -28,17 +29,22 @@ Creates a new session.
 | `model` | `SystemLanguageModel` | -- | The language model to use |
 | `instructions` | `String?` | `nil` | System instructions for the model |
 | `tools` | `Array(Tool)?` | `nil` | Tools available to the model |
+| `adapters` | `Array(Adapter)?` | `nil` | Adapters to apply to the model |
 
 ### `.from_transcript`
 
 ```crystal
 Fm::Session.from_transcript(
   model : Fm::SystemLanguageModel,
-  transcript_json : String
+  transcript_json : String,
+  *,
+  instructions : String? = nil,
+  tools : Array(Fm::Tool)? = nil,
+  adapters : Array(Fm::Adapter)? = nil
 ) : Fm::Session
 ```
 
-Restores a session from a previously exported transcript JSON string.
+Restores a session from a previously exported transcript JSON string. You can optionally provide instructions, tools, and adapters to configure the restored session. All optional parameters are backward compatible.
 
 ## Response Methods
 

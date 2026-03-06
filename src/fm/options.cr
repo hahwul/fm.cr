@@ -13,6 +13,7 @@ module Fm
   #
   # ```
   # options = Fm::GenerationOptions.new(temperature: 0.7, max_response_tokens: 500_u32)
+  # options = Fm::GenerationOptions.new(seed: 42_u64)  # reproducible output
   # ```
   struct GenerationOptions
     # Temperature for sampling (0.0-2.0). Higher = more random.
@@ -24,10 +25,15 @@ module Fm
     # Maximum number of tokens in the response.
     getter max_response_tokens : UInt32?
 
+    # Seed for reproducible generation. When set, the same prompt
+    # with the same seed produces deterministic output.
+    getter seed : UInt64?
+
     def initialize(
       @temperature : Float64? = nil,
       @sampling : Sampling? = nil,
       @max_response_tokens : UInt32? = nil,
+      @seed : UInt64? = nil,
     )
     end
 
@@ -48,6 +54,9 @@ module Fm
           end
           if max = @max_response_tokens
             json.field "maximumResponseTokens", max
+          end
+          if s = @seed
+            json.field "seed", s
           end
         end
       end

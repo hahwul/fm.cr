@@ -86,6 +86,27 @@ module Fm
       end
     end
 
+    # Blocks until the model becomes available or the timeout expires.
+    # Useful when the model is still downloading (`ModelNotReady`).
+    #
+    # Raises `TimeoutError` if the model is still not available after
+    # the given timeout.
+    #
+    # ```
+    # model = Fm::SystemLanguageModel.new
+    # model.wait_until_available(timeout: 60.seconds)
+    # puts "Model is ready!"
+    # ```
+    def wait_until_available(timeout : Time::Span) : Nil
+      timeout_ms = timeout.total_milliseconds.to_u64
+
+      error = Fm.make_error_ptr
+
+      LibFmFfi.fm_model_wait_until_available(@ptr, timeout_ms, error)
+
+      Fm.check_error!(error.value)
+    end
+
     # Raises an error if the model is not available.
     def ensure_available! : Nil
       case availability
