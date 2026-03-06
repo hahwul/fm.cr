@@ -1,3 +1,7 @@
+# List available tasks.
+default:
+    @just --list
+
 # Build the Swift FFI static library
 ext:
     cd ext && make
