@@ -13,7 +13,7 @@ module Fm
   #
   # ```
   # options = Fm::GenerationOptions.new(temperature: 0.7, max_response_tokens: 500_u32)
-  # options = Fm::GenerationOptions.new(seed: 42_u64)  # reproducible output
+  # options = Fm::GenerationOptions.new(seed: 42_u64) # reproducible output
   # ```
   struct GenerationOptions
     # Temperature for sampling (0.0-2.0). Higher = more random.
