@@ -4,7 +4,7 @@
 
 title = "fm.cr"
 description = "Crystal bindings for Apple FoundationModels.framework"
-base_url = "http://localhost:3000"
+base_url = ""
 
 # =============================================================================
 # Plugins
