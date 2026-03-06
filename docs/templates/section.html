@@ -1,0 +1,50 @@
+{% include "header.html" %}
+<header class="docs-header">
+  <a href="{{ base_url }}/" class="logo">fm.cr <span>Documentation</span></a>
+  <nav>
+    <a href="{{ base_url }}/user-guide/">User Guide</a>
+    <a href="{{ base_url }}/api-reference/">API Reference</a>
+  </nav>
+  <div class="header-right">
+    <a href="https://github.com/hahwul/fm.cr">GitHub</a>
+  </div>
+</header>
+<div class="docs-container">
+  <aside class="docs-sidebar">
+    <a href="{{ base_url }}/" class="sidebar-logo">
+      <img src="{{ base_url }}/images/logo.webp" alt="fm.cr">
+    </a>
+    <div class="sidebar-section">
+      <div class="sidebar-title">User Guide</div>
+      <ul class="sidebar-links">
+        <li><a href="{{ base_url }}/user-guide/getting-started/">Getting Started</a></li>
+        <li><a href="{{ base_url }}/user-guide/basic-usage/">Basic Usage</a></li>
+        <li><a href="{{ base_url }}/user-guide/streaming/">Streaming</a></li>
+        <li><a href="{{ base_url }}/user-guide/structured-output/">Structured Output</a></li>
+        <li><a href="{{ base_url }}/user-guide/tool-calling/">Tool Calling</a></li>
+        <li><a href="{{ base_url }}/user-guide/context-management/">Context Management</a></li>
+      </ul>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-title">API Reference</div>
+      <ul class="sidebar-links">
+        <li><a href="{{ base_url }}/api-reference/system-language-model/">SystemLanguageModel</a></li>
+        <li><a href="{{ base_url }}/api-reference/session/">Session</a></li>
+        <li><a href="{{ base_url }}/api-reference/generable/">Generable & Guide</a></li>
+        <li><a href="{{ base_url }}/api-reference/generation-options/">GenerationOptions</a></li>
+        <li><a href="{{ base_url }}/api-reference/tools/">Tools</a></li>
+        <li><a href="{{ base_url }}/api-reference/context/">Context</a></li>
+        <li><a href="{{ base_url }}/api-reference/errors/">Errors</a></li>
+      </ul>
+    </div>
+  </aside>
+  <main class="docs-main">
+    <h1>{{ page.title }}</h1>
+    {{ content }}
+
+    <h2>In This Section</h2>
+    <ul class="section-list">
+      {{ section.list }}
+    </ul>
+    {{ pagination }}
+{% include "footer.html" %}

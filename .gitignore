@@ -1,9 +1,9 @@
-/docs/
 /lib/
 /bin/
 /.shards/
 *.dwarf
 shard.lock
+docs/public
 
 # Swift build artifacts
 ext/libfm_ffi.a
