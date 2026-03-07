@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Type-safe structured output with schema generation">
+  <title>Generable & Guide - fm.cr</title>
+  <meta property="og:title" content="Generable &amp; Guide">
+<meta property="og:type" content="article">
+<meta property="og:url" content="/api-reference/generable/">
+<meta property="og:description" content="Type-safe structured output with schema generation">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Generable &amp; Guide">
+<meta name="twitter:description" content="Type-safe structured output with schema generation">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  
+
+  <link rel="icon" type="image/png" href="/icons/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
+  <link rel="shortcut icon" href="/icons/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="fm.cr" />
+  <link rel="manifest" href="/icons/site.webmanifest" />
+</head>
+<body data-section="api-reference">
+<header class="docs-header">
+  <a href="/" class="logo">fm.cr <span>Documentation</span></a>
+  <nav>
+    <a href="/user-guide/">User Guide</a>
+    <a href="/api-reference/">API Reference</a>
+  </nav>
+  <div class="header-right">
+    <button class="search-trigger" onclick="openSearch()" title="Search (⌘K)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Search</span>
+      <kbd>⌘K</kbd>
+    </button>
+    <a href="https://github.com/hahwul/fm.cr">GitHub</a>
+  </div>
+</header>
+<div class="search-overlay" id="searchOverlay" onclick="if(event.target===this)closeSearch()">
+  <div class="search-modal">
+    <div class="search-input-wrap">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="searchInput" placeholder="Search documentation..." autocomplete="off">
+      <kbd onclick="closeSearch()">ESC</kbd>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
+<div class="docs-container">
+  <aside class="docs-sidebar">
+    <a href="/" class="sidebar-logo">
+      <img src="/images/logo.webp" alt="fm.cr">
+    </a>
+    <div class="sidebar-section">
+      <div class="sidebar-title">User Guide</div>
+      <ul class="sidebar-links">
+        <li><a href="/user-guide/getting-started/">Getting Started</a></li>
+        <li><a href="/user-guide/basic-usage/">Basic Usage</a></li>
+        <li><a href="/user-guide/streaming/">Streaming</a></li>
+        <li><a href="/user-guide/structured-output/">Structured Output</a></li>
+        <li><a href="/user-guide/tool-calling/">Tool Calling</a></li>
+        <li><a href="/user-guide/context-management/">Context Management</a></li>
+      </ul>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-title">API Reference</div>
+      <ul class="sidebar-links">
+        <li><a href="/api-reference/system-language-model/">SystemLanguageModel</a></li>
+        <li><a href="/api-reference/session/">Session</a></li>
+        <li><a href="/api-reference/generable/">Generable & Guide</a></li>
+        <li><a href="/api-reference/generation-options/">GenerationOptions</a></li>
+        <li><a href="/api-reference/tools/">Tools</a></li>
+        <li><a href="/api-reference/context/">Context</a></li>
+        <li><a href="/api-reference/errors/">Errors</a></li>
+      </ul>
+    </div>
+  </aside>
+  <main class="docs-main">
+    <h1>Generable & Guide</h1>
+    <h2 id="overview">Overview</h2>
+<p>The <code>Fm::Generable</code> module and <code>Fm::Guide</code> annotation work together to generate JSON schemas from Crystal structs and add generation constraints, enabling type-safe structured output.</p>
+<h2 id="fmgenerable">Fm::Generable</h2>
+<h3 id="usage">Usage</h3>
+<p>Include <code>Fm::Generable</code> alongside <code>JSON::Serializable</code> in a struct:</p>
+<pre><code class="language-crystal hljs">struct Character
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter name : String
+  getter age : Int32
+  getter traits : Array(String)
+end
+</code></pre>
+<p>This generates a <code>json_schema</code> class method that returns the JSON Schema for the struct:</p>
+<pre><code class="language-crystal hljs">Character.json_schema
+# =&gt; {&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;name&quot;:{&quot;type&quot;:&quot;string&quot;},&quot;age&quot;:{&quot;type&quot;:&quot;integer&quot;},&quot;traits&quot;:{&quot;type&quot;:&quot;array&quot;,&quot;items&quot;:{&quot;type&quot;:&quot;string&quot;}}},&quot;required&quot;:[&quot;name&quot;,&quot;age&quot;,&quot;traits&quot;]}
+</code></pre>
+<h3 id="type-mapping">Type Mapping</h3>
+<p><code>Generable</code> maps Crystal types to JSON Schema types:</p>
+<table>
+<thead>
+<tr>
+<th>Crystal Type</th>
+<th>JSON Schema Type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>String</code></td>
+<td><code>&quot;string&quot;</code></td>
+</tr>
+<tr>
+<td><code>Int8</code>, <code>Int16</code>, <code>Int32</code>, <code>Int64</code></td>
+<td><code>&quot;integer&quot;</code></td>
+</tr>
+<tr>
+<td><code>UInt8</code>, <code>UInt16</code>, <code>UInt32</code>, <code>UInt64</code></td>
+<td><code>&quot;integer&quot;</code></td>
+</tr>
+<tr>
+<td><code>Float32</code>, <code>Float64</code></td>
+<td><code>&quot;number&quot;</code></td>
+</tr>
+<tr>
+<td><code>Bool</code></td>
+<td><code>&quot;boolean&quot;</code></td>
+</tr>
+<tr>
+<td><code>Array(T)</code></td>
+<td><code>&quot;array&quot;</code> with <code>items</code></td>
+</tr>
+<tr>
+<td>Nested <code>Generable</code> type</td>
+<td><code>&quot;object&quot;</code> with properties</td>
+</tr>
+</tbody>
+</table>
+<h3 id="nested-types">Nested Types</h3>
+<p>Types that include <code>Generable</code> are automatically supported as nested objects:</p>
+<pre><code class="language-crystal hljs">struct Address
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter street : String
+  getter city : String
+end
+
+struct Person
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter name : String
+  getter address : Address
+end
+</code></pre>
+<h2 id="fmguide">Fm::Guide</h2>
+<p>The <code>@[Fm::Guide]</code> annotation adds JSON Schema constraints to individual fields, guiding the model's generation.</p>
+<h3 id="string-constraints">String Constraints</h3>
+<pre><code class="language-crystal hljs">struct Config
+  include JSON::Serializable
+  include Fm::Generable
+
+  @[Fm::Guide(description: &quot;Log level setting&quot;)]
+  @[Fm::Guide(any_of: [&quot;debug&quot;, &quot;info&quot;, &quot;warn&quot;, &quot;error&quot;])]
+  getter log_level : String
+
+  @[Fm::Guide(pattern: &quot;^[a-z][a-z0-9_]*$&quot;)]
+  getter identifier : String
+
+  @[Fm::Guide(constant: &quot;v1&quot;)]
+  getter version : String
+end
+</code></pre>
+<h3 id="numeric-constraints">Numeric Constraints</h3>
+<pre><code class="language-crystal hljs">struct Range
+  include JSON::Serializable
+  include Fm::Generable
+
+  @[Fm::Guide(minimum: 0, maximum: 100)]
+  getter score : Int32
+
+  @[Fm::Guide(minimum: 0.0, maximum: 1.0)]
+  getter confidence : Float64
+end
+</code></pre>
+<h3 id="array-constraints">Array Constraints</h3>
+<pre><code class="language-crystal hljs">struct TaggedItem
+  include JSON::Serializable
+  include Fm::Generable
+
+  @[Fm::Guide(min_items: 1, max_items: 10)]
+  getter tags : Array(String)
+
+  @[Fm::Guide(count: 3)]
+  getter top_three : Array(String)
+end
+</code></pre>
+<h3 id="all-constraint-options">All Constraint Options</h3>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Type</th>
+<th>JSON Schema</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>description</code></td>
+<td><code>String</code></td>
+<td><code>description</code></td>
+<td>Human-readable field description</td>
+</tr>
+<tr>
+<td><code>any_of</code></td>
+<td><code>Array</code></td>
+<td><code>enum</code></td>
+<td>Restrict to specific values</td>
+</tr>
+<tr>
+<td><code>constant</code></td>
+<td><code>Any</code></td>
+<td><code>const</code></td>
+<td>Fix to a single value</td>
+</tr>
+<tr>
+<td><code>minimum</code></td>
+<td><code>Number</code></td>
+<td><code>minimum</code></td>
+<td>Minimum numeric value</td>
+</tr>
+<tr>
+<td><code>maximum</code></td>
+<td><code>Number</code></td>
+<td><code>maximum</code></td>
+<td>Maximum numeric value</td>
+</tr>
+<tr>
+<td><code>pattern</code></td>
+<td><code>String</code></td>
+<td><code>pattern</code></td>
+<td>Regex pattern for strings</td>
+</tr>
+<tr>
+<td><code>min_items</code></td>
+<td><code>Int</code></td>
+<td><code>minItems</code></td>
+<td>Minimum array length</td>
+</tr>
+<tr>
+<td><code>max_items</code></td>
+<td><code>Int</code></td>
+<td><code>maxItems</code></td>
+<td>Maximum array length</td>
+</tr>
+<tr>
+<td><code>count</code></td>
+<td><code>Int</code></td>
+<td><code>minItems</code> + <code>maxItems</code></td>
+<td>Exact array length</td>
+</tr>
+</tbody>
+</table>
+
+    <div class="docs-footer">
+      <p>fm.cr - Crystal bindings for Apple FoundationModels.framework</p>
+    </div>
+  </main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+
+<script src="/js/search.js"></script>
+</body>
+</html>
