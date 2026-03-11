@@ -54,6 +54,49 @@ Returns an instance with all parameters set to `nil`, using the model's defaults
 | `Random` | Random sampling with temperature (default) |
 | `Greedy` | Always pick the most likely token |
 
+## Fm::SamplingMode
+
+Advanced sampling mode with top-k and top-p (nucleus sampling) support.
+
+### Factory Methods
+
+#### `.greedy`
+
+```crystal
+Fm::SamplingMode.greedy : Fm::SamplingMode
+```
+
+Deterministic sampling — always pick the most likely token.
+
+#### `.random`
+
+```crystal
+Fm::SamplingMode.random(
+  top : Int32? = nil,
+  probability_threshold : Float64? = nil,
+  seed : UInt64? = nil
+) : Fm::SamplingMode
+```
+
+Random sampling with optional constraints.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `top` | `Int32?` | Top-k: only consider the `k` most likely tokens |
+| `probability_threshold` | `Float64?` | Top-p (nucleus): cumulative probability threshold (0.0 - 1.0) |
+| `seed` | `UInt64?` | Seed for reproducible output |
+
+> **Note:** `top` and `probability_threshold` cannot both be specified.
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `strategy` | `Sampling` | The base strategy (Random or Greedy) |
+| `top` | `Int32?` | Top-k value |
+| `probability_threshold` | `Float64?` | Top-p value |
+| `seed` | `UInt64?` | Seed for reproducibility |
+
 ## Examples
 
 ### Creative output
@@ -72,6 +115,24 @@ options = Fm::GenerationOptions.new(
 options = Fm::GenerationOptions.new(
   temperature: 0.0,
   sampling: Fm::Sampling::Greedy
+)
+```
+
+### Top-k sampling
+
+```crystal
+options = Fm::GenerationOptions.new(
+  temperature: 0.8,
+  sampling_mode: Fm::SamplingMode.random(top: 40)
+)
+```
+
+### Top-p (nucleus) sampling
+
+```crystal
+options = Fm::GenerationOptions.new(
+  temperature: 0.9,
+  sampling_mode: Fm::SamplingMode.random(probability_threshold: 0.9)
 )
 ```
 

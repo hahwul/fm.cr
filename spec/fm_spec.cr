@@ -130,6 +130,96 @@ describe Fm do
     end
   end
 
+  describe Fm::SamplingMode do
+    it "creates greedy mode" do
+      mode = Fm::SamplingMode.greedy
+      mode.strategy.should eq Fm::Sampling::Greedy
+      mode.top.should be_nil
+      mode.probability_threshold.should be_nil
+      mode.seed.should be_nil
+    end
+
+    it "creates random mode with defaults" do
+      mode = Fm::SamplingMode.random
+      mode.strategy.should eq Fm::Sampling::Random
+      mode.top.should be_nil
+      mode.probability_threshold.should be_nil
+      mode.seed.should be_nil
+    end
+
+    it "creates random mode with top-k" do
+      mode = Fm::SamplingMode.random(top: 40)
+      mode.top.should eq 40
+      mode.probability_threshold.should be_nil
+    end
+
+    it "creates random mode with top-p (probability_threshold)" do
+      mode = Fm::SamplingMode.random(probability_threshold: 0.9)
+      mode.probability_threshold.should eq 0.9
+      mode.top.should be_nil
+    end
+
+    it "creates random mode with seed" do
+      mode = Fm::SamplingMode.random(seed: 42_u64)
+      mode.seed.should eq 42_u64
+    end
+
+    it "raises when both top and probability_threshold are specified" do
+      expect_raises(ArgumentError, "Cannot specify both top") do
+        Fm::SamplingMode.random(top: 40, probability_threshold: 0.9)
+      end
+    end
+
+    it "creates from Sampling enum" do
+      mode = Fm::SamplingMode.from_sampling(Fm::Sampling::Greedy)
+      mode.strategy.should eq Fm::Sampling::Greedy
+    end
+  end
+
+  describe "GenerationOptions with SamplingMode" do
+    it "serializes sampling_mode with top-k" do
+      mode = Fm::SamplingMode.random(top: 50)
+      opts = Fm::GenerationOptions.new(sampling_mode: mode)
+      json = opts.to_json
+      json.should contain(%("mode":"random"))
+      json.should contain(%("top":50))
+    end
+
+    it "serializes sampling_mode with top-p" do
+      mode = Fm::SamplingMode.random(probability_threshold: 0.85)
+      opts = Fm::GenerationOptions.new(sampling_mode: mode)
+      json = opts.to_json
+      json.should contain(%("mode":"random"))
+      json.should contain(%("probabilityThreshold":0.85))
+    end
+
+    it "serializes greedy sampling_mode" do
+      mode = Fm::SamplingMode.greedy
+      opts = Fm::GenerationOptions.new(sampling_mode: mode)
+      json = opts.to_json
+      json.should contain(%("mode":"greedy"))
+    end
+
+    it "serializes sampling_mode with seed" do
+      mode = Fm::SamplingMode.random(seed: 123_u64)
+      opts = Fm::GenerationOptions.new(sampling_mode: mode)
+      json = opts.to_json
+      json.should contain(%("seed":123))
+    end
+
+    it "prefers sampling_mode over sampling" do
+      mode = Fm::SamplingMode.random(top: 10)
+      opts = Fm::GenerationOptions.new(sampling: Fm::Sampling::Greedy, sampling_mode: mode)
+      opts.effective_sampling_mode.not_nil!.strategy.should eq Fm::Sampling::Random
+      opts.effective_sampling_mode.not_nil!.top.should eq 10
+    end
+
+    it "falls back to sampling when sampling_mode is nil" do
+      opts = Fm::GenerationOptions.new(sampling: Fm::Sampling::Greedy)
+      opts.effective_sampling_mode.not_nil!.strategy.should eq Fm::Sampling::Greedy
+    end
+  end
+
   describe Fm::Response do
     it "holds content" do
       response = Fm::Response.new("Hello, world!")
