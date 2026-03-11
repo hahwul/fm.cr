@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Extend model capabilities with custom tools">
+  <title>Tool Calling - fm.cr</title>
+  <meta property="og:title" content="Tool Calling">
+<meta property="og:type" content="article">
+<meta property="og:url" content="/user-guide/tool-calling/">
+<meta property="og:description" content="Extend model capabilities with custom tools">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Tool Calling">
+<meta name="twitter:description" content="Extend model capabilities with custom tools">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  
+
+  <link rel="icon" type="image/png" href="/icons/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
+  <link rel="shortcut icon" href="/icons/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="fm.cr" />
+  <link rel="manifest" href="/icons/site.webmanifest" />
+</head>
+<body data-section="user-guide">
+<header class="docs-header">
+  <a href="/" class="logo">fm.cr <span>Documentation</span></a>
+  <nav>
+    <a href="/user-guide/">User Guide</a>
+    <a href="/api-reference/">API Reference</a>
+  </nav>
+  <div class="header-right">
+    <button class="search-trigger" onclick="openSearch()" title="Search (⌘K)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Search</span>
+      <kbd>⌘K</kbd>
+    </button>
+    <a href="https://github.com/hahwul/fm.cr">GitHub</a>
+  </div>
+</header>
+<div class="search-overlay" id="searchOverlay" onclick="if(event.target===this)closeSearch()">
+  <div class="search-modal">
+    <div class="search-input-wrap">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="searchInput" placeholder="Search documentation..." autocomplete="off">
+      <kbd onclick="closeSearch()">ESC</kbd>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
+<div class="docs-container">
+  <aside class="docs-sidebar">
+    <a href="/" class="sidebar-logo">
+      <img src="/images/logo.webp" alt="fm.cr">
+    </a>
+    <div class="sidebar-section">
+      <div class="sidebar-title">User Guide</div>
+      <ul class="sidebar-links">
+        <li><a href="/user-guide/getting-started/">Getting Started</a></li>
+        <li><a href="/user-guide/basic-usage/">Basic Usage</a></li>
+        <li><a href="/user-guide/streaming/">Streaming</a></li>
+        <li><a href="/user-guide/structured-output/">Structured Output</a></li>
+        <li><a href="/user-guide/tool-calling/">Tool Calling</a></li>
+        <li><a href="/user-guide/context-management/">Context Management</a></li>
+      </ul>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-title">API Reference</div>
+      <ul class="sidebar-links">
+        <li><a href="/api-reference/system-language-model/">SystemLanguageModel</a></li>
+        <li><a href="/api-reference/session/">Session</a></li>
+        <li><a href="/api-reference/generable/">Generable & Guide</a></li>
+        <li><a href="/api-reference/generation-options/">GenerationOptions</a></li>
+        <li><a href="/api-reference/tools/">Tools</a></li>
+        <li><a href="/api-reference/context/">Context</a></li>
+        <li><a href="/api-reference/errors/">Errors</a></li>
+      </ul>
+    </div>
+  </aside>
+  <main class="docs-main">
+    <h1>Tool Calling</h1>
+    <h2 id="overview">Overview</h2>
+<p>Tool calling lets the model invoke functions you define during a conversation. The model decides when to use a tool based on the conversation context, calls it with appropriate arguments, and incorporates the result into its response.</p>
+<h2 id="defining-a-tool">Defining a Tool</h2>
+<p>Create a tool by subclassing <code>Fm::Tool</code> and implementing four abstract methods:</p>
+<pre><code class="language-crystal hljs">class WeatherTool &lt; Fm::Tool
+  def name : String
+    &quot;checkWeather&quot;
+  end
+
+  def description : String
+    &quot;Check current weather conditions for a location&quot;
+  end
+
+  def arguments_schema : JSON::Any
+    JSON.parse(%({&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;location&quot;:{&quot;type&quot;:&quot;string&quot;,&quot;description&quot;:&quot;City and country&quot;}},&quot;required&quot;:[&quot;location&quot;]}))
+  end
+
+  def call(arguments : JSON::Any) : Fm::ToolOutput
+    location = arguments[&quot;location&quot;]?.try(&amp;.as_s) || &quot;Unknown&quot;
+    Fm::ToolOutput.new(&quot;Weather in #{location}: Sunny, 22C&quot;)
+  end
+end
+</code></pre>
+<h3 id="tool-interface">Tool Interface</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Return Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td><code>String</code></td>
+<td>Unique identifier for the tool</td>
+</tr>
+<tr>
+<td><code>description</code></td>
+<td><code>String</code></td>
+<td>What the tool does (helps the model decide when to use it)</td>
+</tr>
+<tr>
+<td><code>arguments_schema</code></td>
+<td><code>JSON::Any</code></td>
+<td>JSON Schema defining the tool's input parameters</td>
+</tr>
+<tr>
+<td><code>call(arguments)</code></td>
+<td><code>Fm::ToolOutput</code></td>
+<td>Execute the tool and return a result</td>
+</tr>
+</tbody>
+</table>
+<h2 id="registering-tools">Registering Tools</h2>
+<p>Pass tools when creating a session:</p>
+<pre><code class="language-crystal hljs">tools = [WeatherTool.new] of Fm::Tool
+
+session = Fm::Session.new(
+  model,
+  instructions: &quot;You have weather capabilities.&quot;,
+  tools: tools
+)
+</code></pre>
+<h2 id="using-tools-in-conversation">Using Tools in Conversation</h2>
+<p>Once registered, the model will automatically call tools when appropriate:</p>
+<pre><code class="language-crystal hljs">response = session.respond(&quot;What's the weather in Tokyo?&quot;)
+puts response.content
+# =&gt; The weather in Tokyo is currently sunny with a temperature of 22°C.
+</code></pre>
+<p>The flow is:</p>
+<ol>
+<li>The model receives your prompt</li>
+<li>It decides to call <code>checkWeather</code> with <code>{&quot;location&quot;: &quot;Tokyo&quot;}</code></li>
+<li>Your <code>call</code> method executes and returns the result</li>
+<li>The model incorporates the tool output into its response</li>
+</ol>
+<h2 id="tooloutput">ToolOutput</h2>
+<p><code>ToolOutput</code> wraps the result returned from a tool call:</p>
+<pre><code class="language-crystal hljs"># From a string
+Fm::ToolOutput.new(&quot;Result text&quot;)
+
+# From JSON
+Fm::ToolOutput.new(json: JSON.parse(%({&quot;temperature&quot;: 22, &quot;condition&quot;: &quot;sunny&quot;})))
+</code></pre>
+<h2 id="multiple-tools">Multiple Tools</h2>
+<p>Register multiple tools by including them all in the array:</p>
+<pre><code class="language-crystal hljs">tools = [
+  WeatherTool.new,
+  CalculatorTool.new,
+  SearchTool.new,
+] of Fm::Tool
+
+session = Fm::Session.new(model, instructions: &quot;You have various capabilities.&quot;, tools: tools)
+</code></pre>
+<h2 id="error-handling">Error Handling</h2>
+<p>If a tool call fails, it raises <code>Fm::ToolCallError</code> which includes the tool name and arguments:</p>
+<pre><code class="language-crystal hljs">begin
+  response = session.respond(&quot;Check the weather&quot;)
+rescue ex : Fm::ToolCallError
+  puts &quot;Tool: #{ex.tool_name}&quot;
+  puts &quot;Arguments: #{ex.arguments_json}&quot;
+  puts &quot;Error: #{ex.message}&quot;
+end
+</code></pre>
+
+    <div class="docs-footer">
+      <p>fm.cr - Crystal bindings for Apple FoundationModels.framework</p>
+    </div>
+  </main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+
+<script src="/js/search.js"></script>
+</body>
+</html>

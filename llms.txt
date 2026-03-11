@@ -1,0 +1,1 @@
+This is the documentation for fm.cr, Crystal bindings for Apple FoundationModels.framework.

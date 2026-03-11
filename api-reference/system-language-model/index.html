@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="The on-device language model interface">
+  <title>SystemLanguageModel - fm.cr</title>
+  <meta property="og:title" content="SystemLanguageModel">
+<meta property="og:type" content="article">
+<meta property="og:url" content="/api-reference/system-language-model/">
+<meta property="og:description" content="The on-device language model interface">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="SystemLanguageModel">
+<meta name="twitter:description" content="The on-device language model interface">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  
+
+  <link rel="icon" type="image/png" href="/icons/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
+  <link rel="shortcut icon" href="/icons/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="fm.cr" />
+  <link rel="manifest" href="/icons/site.webmanifest" />
+</head>
+<body data-section="api-reference">
+<header class="docs-header">
+  <a href="/" class="logo">fm.cr <span>Documentation</span></a>
+  <nav>
+    <a href="/user-guide/">User Guide</a>
+    <a href="/api-reference/">API Reference</a>
+  </nav>
+  <div class="header-right">
+    <button class="search-trigger" onclick="openSearch()" title="Search (⌘K)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Search</span>
+      <kbd>⌘K</kbd>
+    </button>
+    <a href="https://github.com/hahwul/fm.cr">GitHub</a>
+  </div>
+</header>
+<div class="search-overlay" id="searchOverlay" onclick="if(event.target===this)closeSearch()">
+  <div class="search-modal">
+    <div class="search-input-wrap">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="searchInput" placeholder="Search documentation..." autocomplete="off">
+      <kbd onclick="closeSearch()">ESC</kbd>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
+<div class="docs-container">
+  <aside class="docs-sidebar">
+    <a href="/" class="sidebar-logo">
+      <img src="/images/logo.webp" alt="fm.cr">
+    </a>
+    <div class="sidebar-section">
+      <div class="sidebar-title">User Guide</div>
+      <ul class="sidebar-links">
+        <li><a href="/user-guide/getting-started/">Getting Started</a></li>
+        <li><a href="/user-guide/basic-usage/">Basic Usage</a></li>
+        <li><a href="/user-guide/streaming/">Streaming</a></li>
+        <li><a href="/user-guide/structured-output/">Structured Output</a></li>
+        <li><a href="/user-guide/tool-calling/">Tool Calling</a></li>
+        <li><a href="/user-guide/context-management/">Context Management</a></li>
+      </ul>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-title">API Reference</div>
+      <ul class="sidebar-links">
+        <li><a href="/api-reference/system-language-model/">SystemLanguageModel</a></li>
+        <li><a href="/api-reference/session/">Session</a></li>
+        <li><a href="/api-reference/generable/">Generable & Guide</a></li>
+        <li><a href="/api-reference/generation-options/">GenerationOptions</a></li>
+        <li><a href="/api-reference/tools/">Tools</a></li>
+        <li><a href="/api-reference/context/">Context</a></li>
+        <li><a href="/api-reference/errors/">Errors</a></li>
+      </ul>
+    </div>
+  </aside>
+  <main class="docs-main">
+    <h1>SystemLanguageModel</h1>
+    <h2 id="overview">Overview</h2>
+<p><code>Fm::SystemLanguageModel</code> represents Apple's on-device foundation model. It provides methods to check availability, create sessions, and estimate token usage.</p>
+<h2 id="constructor">Constructor</h2>
+<h3 id="new"><code>.new</code></h3>
+<pre><code class="language-crystal hljs">Fm::SystemLanguageModel.new(
+  *,
+  use_case : Fm::UseCase = Fm::UseCase::General,
+  guardrails : Fm::Guardrails = Fm::Guardrails::Default
+)
+</code></pre>
+<p>Creates the default system language model.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>use_case</code></td>
+<td><code>UseCase</code></td>
+<td><code>General</code></td>
+<td>Model use case optimization</td>
+</tr>
+<tr>
+<td><code>guardrails</code></td>
+<td><code>Guardrails</code></td>
+<td><code>Default</code></td>
+<td>Safety guardrails level</td>
+</tr>
+</tbody>
+</table>
+<p>Raises <code>Fm::ModelNotAvailableError</code> if the model cannot be created.</p>
+<h2 id="instance-methods">Instance Methods</h2>
+<h3 id="available"><code>#available?</code></h3>
+<pre><code class="language-crystal hljs">model.available? : Bool
+</code></pre>
+<p>Returns <code>true</code> if the model is ready to generate responses.</p>
+<h3 id="availability"><code>#availability</code></h3>
+<pre><code class="language-crystal hljs">model.availability : Fm::ModelAvailability
+</code></pre>
+<p>Returns the detailed availability status. Possible values:</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Available</code></td>
+<td>Model is ready to use</td>
+</tr>
+<tr>
+<td><code>DeviceNotEligible</code></td>
+<td>Device doesn't support Apple Intelligence</td>
+</tr>
+<tr>
+<td><code>AppleIntelligenceNotEnabled</code></td>
+<td>Apple Intelligence is disabled in System Settings</td>
+</tr>
+<tr>
+<td><code>ModelNotReady</code></td>
+<td>Model is still downloading</td>
+</tr>
+<tr>
+<td><code>Unknown</code></td>
+<td>Unknown availability state</td>
+</tr>
+</tbody>
+</table>
+<h3 id="ensureavailable"><code>#ensure_available!</code></h3>
+<pre><code class="language-crystal hljs">model.ensure_available! : Nil
+</code></pre>
+<p>Raises an appropriate error if the model is not available:</p>
+<ul>
+<li><code>DeviceNotEligibleError</code> when the device doesn't support Apple Intelligence</li>
+<li><code>AppleIntelligenceNotEnabledError</code> when Apple Intelligence is disabled</li>
+<li><code>ModelNotReadyError</code> when the model is still downloading</li>
+<li><code>ModelNotAvailableError</code> for unknown unavailability</li>
+</ul>
+<h3 id="waituntilavailable"><code>#wait_until_available</code></h3>
+<pre><code class="language-crystal hljs">model.wait_until_available(timeout : Time::Span) : Nil
+</code></pre>
+<p>Blocks until the model becomes available or the timeout is exceeded. Raises <code>Fm::TimeoutError</code> if the model is not available within the given duration.</p>
+<p>This is especially useful when the model is in the <code>ModelNotReady</code> state (still downloading). Instead of polling <code>available?</code> manually, you can wait for readiness in a single call:</p>
+<pre><code class="language-crystal hljs">begin
+  model.wait_until_available(timeout: 60.seconds)
+  puts &quot;Model is ready!&quot;
+rescue ex : Fm::TimeoutError
+  puts &quot;Model did not become available in time.&quot;
+end
+</code></pre>
+<h3 id="tokenusagefor"><code>#token_usage_for</code></h3>
+<pre><code class="language-crystal hljs">model.token_usage_for(prompt : String) : Int64?
+</code></pre>
+<p>Returns the estimated token count for a prompt string, or <code>nil</code> if the API is unavailable.</p>
+<blockquote>
+<p>Requires macOS 26.4+. Returns <code>nil</code> on older versions.</p>
+</blockquote>
+<h3 id="tokenusagefortools"><code>#token_usage_for_tools</code></h3>
+<pre><code class="language-crystal hljs">model.token_usage_for_tools(
+  instructions : String,
+  tools_json : String? = nil
+) : Int64?
+</code></pre>
+<p>Returns the estimated token count for instructions and tool definitions combined, or <code>nil</code> if the API is unavailable.</p>
+<blockquote>
+<p>Requires macOS 26.4+. Returns <code>nil</code> on older versions.</p>
+</blockquote>
+<h2 id="enums">Enums</h2>
+<h3 id="fmusecase"><code>Fm::UseCase</code></h3>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>General</code></td>
+<td>General-purpose language model use (default)</td>
+</tr>
+<tr>
+<td><code>ContentTagging</code></td>
+<td>Optimized for content tagging and classification</td>
+</tr>
+</tbody>
+</table>
+<h3 id="fmguardrails"><code>Fm::Guardrails</code></h3>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Default</code></td>
+<td>Default guardrails applied to all generation</td>
+</tr>
+<tr>
+<td><code>PermissiveContentTransformations</code></td>
+<td>More permissive guardrails for content transformation tasks</td>
+</tr>
+</tbody>
+</table>
+<h3 id="fmmodelavailability"><code>Fm::ModelAvailability</code></h3>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Available</code></td>
+<td>Model is ready</td>
+</tr>
+<tr>
+<td><code>DeviceNotEligible</code></td>
+<td>Device doesn't support Apple Intelligence</td>
+</tr>
+<tr>
+<td><code>AppleIntelligenceNotEnabled</code></td>
+<td>Apple Intelligence is disabled</td>
+</tr>
+<tr>
+<td><code>ModelNotReady</code></td>
+<td>Model is downloading</td>
+</tr>
+<tr>
+<td><code>Unknown</code></td>
+<td>Unknown state</td>
+</tr>
+</tbody>
+</table>
+
+    <div class="docs-footer">
+      <p>fm.cr - Crystal bindings for Apple FoundationModels.framework</p>
+    </div>
+  </main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+
+<script src="/js/search.js"></script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Stream responses from the model in real time">
+  <title>Streaming - fm.cr</title>
+  <meta property="og:title" content="Streaming">
+<meta property="og:type" content="article">
+<meta property="og:url" content="/user-guide/streaming/">
+<meta property="og:description" content="Stream responses from the model in real time">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Streaming">
+<meta name="twitter:description" content="Stream responses from the model in real time">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  
+
+  <link rel="icon" type="image/png" href="/icons/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
+  <link rel="shortcut icon" href="/icons/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="fm.cr" />
+  <link rel="manifest" href="/icons/site.webmanifest" />
+</head>
+<body data-section="user-guide">
+<header class="docs-header">
+  <a href="/" class="logo">fm.cr <span>Documentation</span></a>
+  <nav>
+    <a href="/user-guide/">User Guide</a>
+    <a href="/api-reference/">API Reference</a>
+  </nav>
+  <div class="header-right">
+    <button class="search-trigger" onclick="openSearch()" title="Search (⌘K)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Search</span>
+      <kbd>⌘K</kbd>
+    </button>
+    <a href="https://github.com/hahwul/fm.cr">GitHub</a>
+  </div>
+</header>
+<div class="search-overlay" id="searchOverlay" onclick="if(event.target===this)closeSearch()">
+  <div class="search-modal">
+    <div class="search-input-wrap">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="searchInput" placeholder="Search documentation..." autocomplete="off">
+      <kbd onclick="closeSearch()">ESC</kbd>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
+<div class="docs-container">
+  <aside class="docs-sidebar">
+    <a href="/" class="sidebar-logo">
+      <img src="/images/logo.webp" alt="fm.cr">
+    </a>
+    <div class="sidebar-section">
+      <div class="sidebar-title">User Guide</div>
+      <ul class="sidebar-links">
+        <li><a href="/user-guide/getting-started/">Getting Started</a></li>
+        <li><a href="/user-guide/basic-usage/">Basic Usage</a></li>
+        <li><a href="/user-guide/streaming/">Streaming</a></li>
+        <li><a href="/user-guide/structured-output/">Structured Output</a></li>
+        <li><a href="/user-guide/tool-calling/">Tool Calling</a></li>
+        <li><a href="/user-guide/context-management/">Context Management</a></li>
+      </ul>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-title">API Reference</div>
+      <ul class="sidebar-links">
+        <li><a href="/api-reference/system-language-model/">SystemLanguageModel</a></li>
+        <li><a href="/api-reference/session/">Session</a></li>
+        <li><a href="/api-reference/generable/">Generable & Guide</a></li>
+        <li><a href="/api-reference/generation-options/">GenerationOptions</a></li>
+        <li><a href="/api-reference/tools/">Tools</a></li>
+        <li><a href="/api-reference/context/">Context</a></li>
+        <li><a href="/api-reference/errors/">Errors</a></li>
+      </ul>
+    </div>
+  </aside>
+  <main class="docs-main">
+    <h1>Streaming</h1>
+    <h2 id="overview">Overview</h2>
+<p>Streaming lets you process the model's response incrementally as it's generated, rather than waiting for the full response. This is useful for displaying text in real time or processing long outputs efficiently.</p>
+<h2 id="basic-streaming">Basic Streaming</h2>
+<p>Use the <code>stream</code> method with a block that receives each text chunk:</p>
+<pre><code class="language-crystal hljs">session = Fm::Session.new(model, instructions: &quot;You are a storyteller.&quot;)
+
+session.stream(&quot;Tell me a short story.&quot;) do |chunk|
+  print chunk
+  STDOUT.flush
+end
+puts
+</code></pre>
+<p>Each <code>chunk</code> is a <code>String</code> containing only the new text delta for that iteration -- not the full accumulated response. You can concatenate chunks yourself if you need the complete text.</p>
+<h2 id="streaming-with-options">Streaming with Options</h2>
+<p>Pass <code>GenerationOptions</code> to control temperature and other parameters:</p>
+<pre><code class="language-crystal hljs">options = Fm::GenerationOptions.new(
+  temperature: 1.2,
+  max_response_tokens: 1000_u32
+)
+
+session.stream(&quot;Write a creative poem.&quot;, options) do |chunk|
+  print chunk
+  STDOUT.flush
+end
+puts
+</code></pre>
+<h2 id="streaming-json">Streaming JSON</h2>
+<p>Stream structured JSON output matching a schema:</p>
+<pre><code class="language-crystal hljs">schema = %({&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;title&quot;:{&quot;type&quot;:&quot;string&quot;},&quot;summary&quot;:{&quot;type&quot;:&quot;string&quot;}},&quot;required&quot;:[&quot;title&quot;,&quot;summary&quot;]})
+
+session.stream_json(&quot;Summarize the Crystal language.&quot;, schema) do |chunk|
+  print chunk
+  STDOUT.flush
+end
+puts
+</code></pre>
+<h2 id="cancellation">Cancellation</h2>
+<p>Cancel an ongoing stream from another fiber:</p>
+<pre><code class="language-crystal hljs"># Start streaming in a separate fiber
+spawn do
+  session.stream(&quot;Write a very long essay.&quot;) do |chunk|
+    print chunk
+  end
+end
+
+# Cancel after some time
+sleep 2.seconds
+session.cancel
+</code></pre>
+<h2 id="checking-state">Checking State</h2>
+<p>Check whether the session is currently generating:</p>
+<pre><code class="language-crystal hljs">if session.responding?
+  puts &quot;Generation in progress...&quot;
+end
+</code></pre>
+
+    <div class="docs-footer">
+      <p>fm.cr - Crystal bindings for Apple FoundationModels.framework</p>
+    </div>
+  </main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+
+<script src="/js/search.js"></script>
+</body>
+</html>
