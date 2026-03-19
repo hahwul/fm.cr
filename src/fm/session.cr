@@ -25,32 +25,10 @@ module Fm
     # ```
     def initialize(model : SystemLanguageModel, *, instructions : String? = nil, tools : Array(Tool)? = nil, adapters : Array(Adapter)? = nil)
       instructions_ptr = instructions ? instructions.to_unsafe : Pointer(LibC::Char).null
-      tools_json_ptr = Pointer(LibC::Char).null
-      user_data = Pointer(Void).null
-
-      if tools && !tools.empty?
-        tools_json = Tool.tools_to_json(tools)
-        tools_json_ptr = tools_json.to_unsafe
-
-        boxed = Box(Array(Tool)).box(tools)
-        @tool_box = boxed
-        user_data = boxed
-      else
-        @tool_box = nil
-      end
-
-      # Prepare adapter pointers
+      tools_json, user_data, @tool_box = Session.prepare_tools(tools)
+      tools_json_ptr = tools_json ? tools_json.to_unsafe : Pointer(LibC::Char).null
+      adapter_ptrs, adapter_count = Session.prepare_adapters(adapters)
       @adapters = adapters
-      adapter_ptrs = Pointer(Void*).null
-      adapter_count = 0_i32
-
-      if adapters && !adapters.empty?
-        adapter_count = adapters.size.to_i32
-        adapter_ptrs = Pointer(Void*).malloc(adapter_count)
-        adapters.each_with_index do |adapter, i|
-          adapter_ptrs[i] = adapter.to_unsafe
-        end
-      end
 
       error = Fm.make_error_ptr
 
@@ -101,29 +79,9 @@ module Fm
       adapters : Array(Adapter)? = nil,
     ) : self
       instructions_ptr = instructions ? instructions.to_unsafe : Pointer(LibC::Char).null
-      tools_json_ptr = Pointer(LibC::Char).null
-      user_data = Pointer(Void).null
-      tool_box : Void*? = nil
-
-      if tools && !tools.empty?
-        tools_json = Tool.tools_to_json(tools)
-        tools_json_ptr = tools_json.to_unsafe
-
-        boxed = Box(Array(Tool)).box(tools)
-        tool_box = boxed
-        user_data = boxed
-      end
-
-      adapter_ptrs = Pointer(Void*).null
-      adapter_count = 0_i32
-
-      if adapters && !adapters.empty?
-        adapter_count = adapters.size.to_i32
-        adapter_ptrs = Pointer(Void*).malloc(adapter_count)
-        adapters.each_with_index do |adapter, i|
-          adapter_ptrs[i] = adapter.to_unsafe
-        end
-      end
+      tools_json, user_data, tool_box = prepare_tools(tools)
+      tools_json_ptr = tools_json ? tools_json.to_unsafe : Pointer(LibC::Char).null
+      adapter_ptrs, adapter_count = prepare_adapters(adapters)
 
       error = Fm.make_error_ptr
 
@@ -162,26 +120,16 @@ module Fm
     # puts response.content
     # ```
     def respond(prompt : String, options : GenerationOptions = GenerationOptions.default) : Response
-      options_json = options.to_json
-
       error = Fm.make_error_ptr
 
       response_ptr = LibFmFfi.fm_session_respond(
         @ptr,
         prompt.to_unsafe,
-        options_json.to_unsafe,
+        options.to_json.to_unsafe,
         error
       )
 
-      Fm.check_error!(error.value)
-
-      if response_ptr.null?
-        raise GenerationError.new("Received null response")
-      end
-
-      content = String.new(response_ptr)
-      LibFmFfi.fm_string_free(response_ptr)
-      Response.new(content)
+      Response.new(Session.extract_ffi_string!(response_ptr, error))
     end
 
     # Sends a prompt and waits for the response, with a timeout.
@@ -192,27 +140,17 @@ module Fm
         return respond(prompt, options)
       end
 
-      options_json = options.to_json
-
       error = Fm.make_error_ptr
 
       response_ptr = LibFmFfi.fm_session_respond_with_timeout(
         @ptr,
         prompt.to_unsafe,
-        options_json.to_unsafe,
+        options.to_json.to_unsafe,
         timeout_ms,
         error
       )
 
-      Fm.check_error!(error.value)
-
-      if response_ptr.null?
-        raise GenerationError.new("Received null response")
-      end
-
-      content = String.new(response_ptr)
-      LibFmFfi.fm_string_free(response_ptr)
-      Response.new(content)
+      Response.new(Session.extract_ffi_string!(response_ptr, error))
     end
 
     # Sends a prompt and streams the response via a block.
@@ -226,24 +164,20 @@ module Fm
     # end
     # ```
     def stream(prompt : String, options : GenerationOptions = GenerationOptions.default, &block : String ->) : Nil
-      options_json = options.to_json
-
       state = StreamState.new(block)
       boxed = Box(StreamState).box(state)
 
       LibFmFfi.fm_session_stream(
         @ptr,
         prompt.to_unsafe,
-        options_json.to_unsafe,
+        options.to_json.to_unsafe,
         boxed,
         ->Session.on_chunk(Void*, LibC::Char*),
         ->Session.on_done(Void*),
         ->Session.on_error(Void*, Int32, LibC::Char*)
       )
 
-      if err = state.error
-        raise self.class.error_from_stream(state.error_code, err)
-      end
+      state.raise_if_error!
     end
 
     # Cancels an ongoing stream operation.
@@ -259,18 +193,14 @@ module Fm
     # Gets the session transcript as a JSON string.
     def transcript_json : String
       error = Fm.make_error_ptr
-
       ptr = LibFmFfi.fm_session_get_transcript(@ptr, error)
-
       Fm.check_error!(error.value)
-
       if ptr.null?
         raise InternalError.new("Transcript retrieval returned null without error")
       end
-
-      json = String.new(ptr)
+      content = String.new(ptr)
       LibFmFfi.fm_string_free(ptr)
-      json
+      content
     end
 
     # Prewarms the model with an optional prompt prefix.
@@ -286,27 +216,17 @@ module Fm
     # json = session.respond_json("Generate a person", schema)
     # ```
     def respond_json(prompt : String, schema_json : String, options : GenerationOptions = GenerationOptions.default) : String
-      options_json = options.to_json
-
       error = Fm.make_error_ptr
 
       response_ptr = LibFmFfi.fm_session_respond_json(
         @ptr,
         prompt.to_unsafe,
         schema_json.to_unsafe,
-        options_json.to_unsafe,
+        options.to_json.to_unsafe,
         error
       )
 
-      Fm.check_error!(error.value)
-
-      if response_ptr.null?
-        raise GenerationError.new("Received null response from JSON generation")
-      end
-
-      content = String.new(response_ptr)
-      LibFmFfi.fm_string_free(response_ptr)
-      content
+      Session.extract_ffi_string!(response_ptr, error, "Received null response from JSON generation")
     end
 
     # Sends a prompt and returns a deserialized structured response.
@@ -333,8 +253,6 @@ module Fm
 
     # Streams a structured JSON response matching a schema.
     def stream_json(prompt : String, schema_json : String, options : GenerationOptions = GenerationOptions.default, &block : String ->) : Nil
-      options_json = options.to_json
-
       state = StreamState.new(block)
       boxed = Box(StreamState).box(state)
 
@@ -342,16 +260,14 @@ module Fm
         @ptr,
         prompt.to_unsafe,
         schema_json.to_unsafe,
-        options_json.to_unsafe,
+        options.to_json.to_unsafe,
         boxed,
         ->Session.on_chunk(Void*, LibC::Char*),
         ->Session.on_done(Void*),
         ->Session.on_error(Void*, Int32, LibC::Char*)
       )
 
-      if err = state.error
-        raise self.class.error_from_stream(state.error_code, err)
-      end
+      state.raise_if_error!
     end
 
     # :nodoc:
@@ -381,6 +297,50 @@ module Fm
       end
     end
 
+    # -- Helper methods --
+
+    # :nodoc:
+    # Extracts a String from an FFI char pointer, checking for errors and freeing memory.
+    protected def self.extract_ffi_string!(ptr : LibC::Char*, error : Pointer(Void*), null_message : String = "Received null response") : String
+      Fm.check_error!(error.value)
+
+      if ptr.null?
+        raise GenerationError.new(null_message)
+      end
+
+      content = String.new(ptr)
+      LibFmFfi.fm_string_free(ptr)
+      content
+    end
+
+    # :nodoc:
+    # Prepares tool JSON and boxing for FFI calls.
+    # Returns the JSON String (to keep it alive for GC safety), user_data pointer, and tool_box.
+    protected def self.prepare_tools(tools : Array(Tool)?) : {String?, Void*, Void*?}
+      if tools && !tools.empty?
+        tools_json = Tool.tools_to_json(tools)
+        boxed = Box(Array(Tool)).box(tools)
+        {tools_json, boxed, boxed}
+      else
+        {nil, Pointer(Void).null, nil}
+      end
+    end
+
+    # :nodoc:
+    # Prepares adapter pointers for FFI calls.
+    protected def self.prepare_adapters(adapters : Array(Adapter)?) : {Pointer(Void*), Int32}
+      if adapters && !adapters.empty?
+        count = adapters.size.to_i32
+        ptrs = Pointer(Void*).malloc(count)
+        adapters.each_with_index do |adapter, i|
+          ptrs[i] = adapter.to_unsafe
+        end
+        {ptrs, count}
+      else
+        {Pointer(Void*).null, 0_i32}
+      end
+    end
+
     # -- Streaming callback infrastructure --
 
     # :nodoc:
@@ -391,6 +351,13 @@ module Fm
 
       def initialize(@on_chunk : String ->)
         @error = nil
+      end
+
+      # Raises the appropriate error if one was recorded during streaming.
+      def raise_if_error! : Nil
+        if err = @error
+          raise Session.error_from_stream(@error_code, err)
+        end
       end
     end
 
