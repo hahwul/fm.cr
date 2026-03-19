@@ -133,8 +133,11 @@ module Fm
           if max = @max_response_tokens
             json.field "maximumResponseTokens", max
           end
+          # Only emit top-level seed when no sampling_mode carries its own seed,
+          # avoiding duplicate "seed" keys in the JSON output.
           if s = @seed
-            json.field "seed", s
+            mode_seed = mode.try(&.seed)
+            json.field "seed", s unless mode_seed
           end
         end
       end

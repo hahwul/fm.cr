@@ -218,6 +218,23 @@ describe Fm do
       opts = Fm::GenerationOptions.new(sampling: Fm::Sampling::Greedy)
       opts.effective_sampling_mode.not_nil!.strategy.should eq Fm::Sampling::Greedy
     end
+
+    it "does not duplicate seed when sampling_mode already carries one" do
+      mode = Fm::SamplingMode.random(seed: 42_u64)
+      opts = Fm::GenerationOptions.new(sampling_mode: mode, seed: 99_u64)
+      json = opts.to_json
+      # seed should appear only once (inside the sampling object)
+      json.scan(/"seed"/).size.should eq 1
+      json.should contain(%("seed":42))
+      json.should_not contain(%("seed":99))
+    end
+
+    it "emits top-level seed when sampling_mode has no seed" do
+      mode = Fm::SamplingMode.random(top: 10)
+      opts = Fm::GenerationOptions.new(sampling_mode: mode, seed: 77_u64)
+      json = opts.to_json
+      json.should contain(%("seed":77))
+    end
   end
 
   describe Fm::Response do
