@@ -48,6 +48,8 @@ module Fm
     # Random sampling with optional top-k, top-p, and seed.
     #
     # NOTE: `top` and `probability_threshold` cannot both be specified.
+    # NOTE: `seed` alone (without `top` or `probability_threshold`) is not
+    #   supported by Apple's FoundationModels API and will be ignored.
     def self.random(*, top : Int32? = nil, probability_threshold : Float64? = nil, seed : UInt64? = nil) : self
       if top && probability_threshold
         raise ArgumentError.new("Cannot specify both top (top-k) and probability_threshold (top-p)")

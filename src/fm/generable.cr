@@ -128,11 +128,37 @@ module Fm
       {% elsif T.nilable? %}
         {% non_nil = T.union_types.reject { |t| t == ::Nil }.first %}
         Fm::Generable.type_to_schema({{ non_nil }})
+      {% elsif T.union? %}
+        # Non-nil union types → JSON Schema "oneOf"
+        {% variants = T.union_types %}
+        one_of = [] of JSON::Any
+        {% for vt in variants %}
+          one_of << Fm::Generable.type_to_schema({{ vt }})
+        {% end %}
+        JSON::Any.new({"oneOf" => JSON::Any.new(one_of)} of String => JSON::Any)
+      {% elsif T < Enum %}
+        # Enum types → JSON Schema "enum" with member names (snake_case)
+        {% members = T.constants %}
+        enum_values = [] of JSON::Any
+        {% for m in members %}
+          enum_values << JSON::Any.new({{ m.underscore.stringify }})
+        {% end %}
+        JSON::Any.new({
+          "type" => JSON::Any.new("string"),
+          "enum" => JSON::Any.new(enum_values),
+        } of String => JSON::Any)
       {% elsif T < Array %}
         items = Fm::Generable.type_to_schema({{ T.type_vars[0] }})
         JSON::Any.new({
           "type"  => JSON::Any.new("array"),
           "items" => items,
+        } of String => JSON::Any)
+      {% elsif T < Hash %}
+        # Hash(String, V) → JSON Schema object with additionalProperties
+        additional = Fm::Generable.type_to_schema({{ T.type_vars[1] }})
+        JSON::Any.new({
+          "type"                 => JSON::Any.new("object"),
+          "additionalProperties" => additional,
         } of String => JSON::Any)
       {% elsif T.class.has_method?(:json_schema) %}
         T.json_schema

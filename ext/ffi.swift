@@ -444,16 +444,77 @@ final class ToolDispatcher: @unchecked Sendable {
     }
 }
 
-// MARK: - Generic Tool Bridge
+// MARK: - Per-Tool Bridge
 //
-// FoundationModels requires @Generable typed arguments for tools.
-// We bridge dynamic Crystal tools by creating a generic dispatcher tool that:
-// 1. Accepts a tool name and JSON arguments from the model
-// 2. Dispatches to the appropriate Crystal callback
-// 3. Returns the result to the model
+// Each Crystal-defined tool is registered as a separate FoundationModels Tool
+// so the model sees individual tools with proper names, descriptions, and schemas.
+// Arguments are bridged via GeneratedContent (which conforms to ConvertibleFromGeneratedContent).
 
-/// Arguments for the generic tool dispatcher.
-/// The model generates this structure to invoke a Crystal-defined tool.
+/// A bridge that registers a single Crystal tool as a native FoundationModels Tool.
+/// The model sees each tool individually with its own name, description, and parameter schema.
+final class PerToolBridge: Tool, @unchecked Sendable {
+    typealias Arguments = GeneratedContent
+    typealias Output = String
+
+    private let toolDef: ToolDefinitionDTO
+    private let dispatcher: ToolDispatcher
+    private let _parameters: GenerationSchema
+
+    init(toolDef: ToolDefinitionDTO, dispatcher: ToolDispatcher, schema: GenerationSchema) {
+        self.toolDef = toolDef
+        self.dispatcher = dispatcher
+        self._parameters = schema
+    }
+
+    var name: String { toolDef.name }
+    var description: String { toolDef.description }
+    var parameters: GenerationSchema { _parameters }
+
+    func call(arguments: GeneratedContent) async throws -> String {
+        let argsJson = arguments.jsonString
+        return try dispatcher.callTool(name: toolDef.name, argumentsJson: argsJson)
+    }
+}
+
+/// Builds tool bridges from tool definitions.
+/// Each tool whose schema decodes successfully gets a PerToolBridge (individual registration).
+/// Tools whose schema fails to decode fall through to GenericToolBridge (fallback).
+private func buildToolBridges(dispatcher: ToolDispatcher) -> [any Tool] {
+    var perToolBridges: [any Tool] = []
+    var failedDefs: [ToolDefinitionDTO] = []
+
+    for def in dispatcher.toolDefinitions {
+        if let schemaData = def.argumentsSchemaJson.data(using: .utf8),
+           let schema = try? JSONDecoder().decode(GenerationSchema.self, from: schemaData) {
+            perToolBridges.append(PerToolBridge(toolDef: def, dispatcher: dispatcher, schema: schema))
+        } else {
+            failedDefs.append(def)
+        }
+    }
+
+    // If all tools decoded, return per-tool bridges only
+    if failedDefs.isEmpty {
+        return perToolBridges
+    }
+
+    // If all failed, single generic bridge
+    if perToolBridges.isEmpty {
+        return [GenericToolBridge(dispatcher: dispatcher)]
+    }
+
+    // Partial: per-tool bridges for successes + generic bridge for failures
+    let fallbackDispatcher = ToolDispatcher(
+        toolDefinitions: failedDefs, userData: dispatcher.userData, callback: dispatcher.callback
+    )
+    perToolBridges.append(GenericToolBridge(dispatcher: fallbackDispatcher))
+    return perToolBridges
+}
+
+// MARK: - Fallback Generic Tool Bridge
+//
+// Used when per-tool schema decoding fails (e.g. Crystal sends a schema
+// that doesn't map to GenerationSchema). Falls back to the single-tool approach.
+
 @Generable
 struct GenericToolArgument: Sendable, Codable {
     let name: String
@@ -462,10 +523,7 @@ struct GenericToolArgument: Sendable, Codable {
 
 @Generable
 struct GenericToolCallArguments: Sendable, Codable {
-    /// The name of the tool to invoke (must match a registered Crystal tool)
     let toolName: String
-
-    /// Arguments for the tool as key/value pairs (values are JSON fragments)
     let arguments: [GenericToolArgument]
 
     enum CodingKeys: String, CodingKey {
@@ -545,8 +603,7 @@ private func parseJsonFragment(_ text: String) -> Any? {
     return try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
 }
 
-/// A bridge tool that dispatches to Crystal-defined tools.
-/// This is registered with FoundationModels and handles all dynamic tool calls.
+/// Fallback bridge that dispatches all tools through a single invoke_tool.
 final class GenericToolBridge: Tool, @unchecked Sendable {
     typealias Arguments = GenericToolCallArguments
     typealias Output = String
@@ -554,10 +611,8 @@ final class GenericToolBridge: Tool, @unchecked Sendable {
     private let dispatcher: ToolDispatcher
     private let toolDescriptions: String
 
-    /// Creates a bridge with the given dispatcher and tool descriptions for the schema.
     init(dispatcher: ToolDispatcher) {
         self.dispatcher = dispatcher
-        // Build detailed description from tool definitions including schemas
         let descriptions = dispatcher.toolDefinitions.map { def in
             """
             Tool: \(def.name)
@@ -693,19 +748,17 @@ public func fm_session_create(
         return nil
     }
     let toolDispatcher: ToolDispatcher?
-    let toolBridge: GenericToolBridge?
+    var toolsArray: [any Tool] = []
 
     if !toolDefinitions.isEmpty {
         let dispatcher = ToolDispatcher(toolDefinitions: toolDefinitions, userData: userData, callback: toolCallback)
         toolDispatcher = dispatcher
-        toolBridge = GenericToolBridge(dispatcher: dispatcher)
+        toolsArray = buildToolBridges(dispatcher: dispatcher)
     } else {
         toolDispatcher = nil
-        toolBridge = nil
     }
 
     // Build session with tools and instructions
-    let toolsArray: [any Tool] = toolBridge.map { [$0] } ?? []
     let session: LanguageModelSession
     if let inst = instructionsValue {
         session = LanguageModelSession(model: model, tools: toolsArray, instructions: inst)
@@ -754,19 +807,17 @@ public func fm_session_from_transcript(
     }
 
     let toolDispatcher: ToolDispatcher?
-    let toolBridge: GenericToolBridge?
+    var toolsArray: [any Tool] = []
     if !toolDefinitions.isEmpty {
         let dispatcher = ToolDispatcher(toolDefinitions: toolDefinitions, userData: userData, callback: toolCallback)
         toolDispatcher = dispatcher
-        toolBridge = GenericToolBridge(dispatcher: dispatcher)
+        toolsArray = buildToolBridges(dispatcher: dispatcher)
     } else {
         toolDispatcher = nil
-        toolBridge = nil
     }
 
     do {
         let transcript = try JSONDecoder().decode(Transcript.self, from: jsonData)
-        let toolsArray: [any Tool] = toolBridge.map { [$0] } ?? []
 
         let session: LanguageModelSession
         if !toolsArray.isEmpty {
@@ -907,20 +958,7 @@ public func fm_session_stream(
             }
         } catch {
             callbackQueue.sync {
-                // Extract tool error context if available
-                let (errorCode, errorMessage): (Int32, String)
-                if let toolError = error as? ToolError {
-                    // Include tool context in the error message for streaming
-                    var msg = toolError.message
-                    if let name = toolError.toolName {
-                        msg += " [tool: \(name)]"
-                    }
-                    errorCode = FFIErrorCode.toolError.rawValue
-                    errorMessage = msg
-                } else {
-                    errorCode = FFIErrorCode.generationFailed.rawValue
-                    errorMessage = error.localizedDescription
-                }
+                let (errorCode, errorMessage) = mapStreamingError(error)
                 errorMessage.withCString { ptr in
                     onError(userData, errorCode, ptr)
                 }
@@ -1026,29 +1064,64 @@ private func parseGenerationOptions(_ optionsJson: UnsafePointer<CChar>?) -> Gen
 
     do {
         let decoded = try JSONDecoder().decode(GenerationOptionsDTO.self, from: jsonData)
-
-        return GenerationOptions(
-            sampling: decoded.sampling == "greedy" ? .greedy : nil,
-            temperature: decoded.temperature,
-            maximumResponseTokens: decoded.maximumResponseTokens.map { Int($0) }
-        )
+        return decoded.toGenerationOptions()
     } catch {
         return GenerationOptions()
     }
 }
 
+/// DTO for the nested sampling object from Crystal.
+private struct SamplingDTO: Decodable {
+    var mode: String?
+    var top: Int?
+    var probabilityThreshold: Double?
+    var seed: UInt64?
+}
+
 /// DTO for parsing generation options from JSON.
 private struct GenerationOptionsDTO: Decodable {
     var temperature: Double?
-    var sampling: String?
+    var sampling: SamplingDTO?
     var maximumResponseTokens: UInt32?
     var seed: UInt64?
+
+    func toGenerationOptions() -> GenerationOptions {
+        var samplingParam: GenerationOptions.SamplingMode? = nil
+
+        if let s = sampling {
+            let effectiveSeed = s.seed ?? seed
+
+            if s.mode == "greedy" {
+                samplingParam = .greedy
+            } else if let topK = s.top {
+                samplingParam = .random(top: topK, seed: effectiveSeed)
+            } else if let topP = s.probabilityThreshold {
+                samplingParam = .random(probabilityThreshold: topP, seed: effectiveSeed)
+            }
+            // Note: FoundationModels doesn't have .random(seed:) without top-k/top-p,
+            // so seed-only falls through to no sampling mode (framework default).
+        }
+
+        return GenerationOptions(
+            sampling: samplingParam,
+            temperature: temperature,
+            maximumResponseTokens: maximumResponseTokens.map { Int($0) }
+        )
+    }
 }
 
 // MARK: - Structured (JSON) Response
 
+/// Parses a GenerationSchema from a JSON string.
+/// GenerationSchema conforms to Codable, so we decode it directly.
+private func parseGenerationSchema(_ schemaJson: UnsafePointer<CChar>) -> GenerationSchema? {
+    let jsonString = String(cString: schemaJson)
+    guard let jsonData = jsonString.data(using: .utf8) else { return nil }
+    return try? JSONDecoder().decode(GenerationSchema.self, from: jsonData)
+}
+
 /// Sends a prompt and returns a JSON response matching the provided schema.
-/// The schema is used to instruct the model to output valid JSON.
+/// Uses the native GenerationSchema API when possible, falls back to prompt-based approach.
 @_cdecl("fm_session_respond_json")
 public func fm_session_respond_json(
     _ sessionPtr: UnsafeMutableRawPointer,
@@ -1062,25 +1135,22 @@ public func fm_session_respond_json(
     let schemaString = String(cString: schemaJson)
     let options = parseGenerationOptions(optionsJson)
 
-    // Build a prompt that instructs the model to output JSON matching the schema
-    let structuredPrompt = """
-    \(promptString)
-
-    IMPORTANT: You must respond with valid JSON that matches this schema exactly:
-    \(schemaString)
-
-    Output only the JSON object, with no additional text, markdown formatting, or explanation.
-    """
-
     do {
-        let content = try AsyncWaiter.wait {
-            let response = try await state.session.respond(to: structuredPrompt, options: options)
-            return response.content
+        let content: String
+        if let schema = parseGenerationSchema(schemaJson) {
+            // Native GenerationSchema API — guaranteed structured output
+            content = try AsyncWaiter.wait {
+                let response = try await state.session.respond(to: promptString, schema: schema, options: options)
+                return response.content.jsonString
+            }
+        } else {
+            // Fallback: prompt-based JSON generation
+            content = try respondJsonViaPrompt(
+                state: state, prompt: promptString, schemaString: schemaString, options: options
+            )
         }
 
-        // Try to extract JSON from the response (handle potential markdown code blocks)
-        let jsonContent = extractJson(from: content)
-        return strdup(jsonContent)
+        return strdup(content)
     } catch {
         if let errorOut = errorOut {
             errorOut.pointee = createErrorFromException(error)
@@ -1089,7 +1159,61 @@ public func fm_session_respond_json(
     }
 }
 
+/// Fallback: instructs the model via prompt to output JSON matching the schema.
+private func respondJsonViaPrompt(
+    state: SessionState, prompt: String, schemaString: String, options: GenerationOptions
+) throws -> String {
+    let structuredPrompt = """
+    \(prompt)
+
+    IMPORTANT: You must respond with valid JSON that matches this schema exactly:
+    \(schemaString)
+
+    Output only the JSON object, with no additional text, markdown formatting, or explanation.
+    """
+
+    let raw = try AsyncWaiter.wait {
+        let response = try await state.session.respond(to: structuredPrompt, options: options)
+        return response.content
+    }
+    return extractJson(from: raw)
+}
+
+/// Extracts JSON from a response that might contain markdown code blocks or extra text.
+private func extractJson(from content: String) -> String {
+    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // Markdown code block
+    if trimmed.hasPrefix("```") {
+        if let startRange = trimmed.range(of: "\n") {
+            let afterFence = trimmed[startRange.upperBound...]
+            if let endRange = afterFence.range(of: "```") {
+                return String(afterFence[..<endRange.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+    }
+
+    // Already starts with JSON delimiter
+    if trimmed.hasPrefix("{") || trimmed.hasPrefix("[") {
+        return trimmed
+    }
+
+    // Find first JSON structure
+    let objectStart = trimmed.firstIndex(of: "{")
+    let arrayStart = trimmed.firstIndex(of: "[")
+    if let obj = objectStart, let arr = arrayStart {
+        return String(trimmed[(obj <= arr ? obj : arr)...])
+    } else if let obj = objectStart {
+        return String(trimmed[obj...])
+    } else if let arr = arrayStart {
+        return String(trimmed[arr...])
+    }
+
+    return trimmed
+}
+
 /// Streams a JSON response matching the provided schema.
+/// Uses the native GenerationSchema API when possible, falls back to prompt-based approach.
 @_cdecl("fm_session_stream_json")
 public func fm_session_stream_json(
     _ sessionPtr: UnsafeMutableRawPointer,
@@ -1105,46 +1229,72 @@ public func fm_session_stream_json(
     let promptString = String(cString: prompt)
     let schemaString = String(cString: schemaJson)
     let options = parseGenerationOptions(optionsJson)
-
-    // Build a prompt that instructs the model to output JSON matching the schema
-    let structuredPrompt = """
-    \(promptString)
-
-    IMPORTANT: You must respond with valid JSON that matches this schema exactly:
-    \(schemaString)
-
-    Output only the JSON object, with no additional text, markdown formatting, or explanation.
-    """
+    let schema = parseGenerationSchema(schemaJson)
 
     let callbackQueue = DispatchQueue(label: "fm.ffi.callbacks.json", qos: .userInteractive)
     let semaphore = DispatchSemaphore(value: 0)
 
     let task = Task.detached {
         do {
-            let stream = state.session.streamResponse(to: structuredPrompt, options: options)
-            var previousLength = 0
+            if let schema = schema {
+                // Native GenerationSchema API
+                let stream = state.session.streamResponse(to: promptString, schema: schema, options: options)
+                var previousLength = 0
 
-            for try await partialResponse in stream {
-                let content = partialResponse.content
-                let delta = String(content.dropFirst(previousLength))
-                previousLength = content.count
+                for try await partialResponse in stream {
+                    let content = partialResponse.content.jsonString
+                    let delta = String(content.dropFirst(previousLength))
+                    previousLength = content.count
 
-                if !delta.isEmpty {
-                    callbackQueue.sync {
-                        delta.withCString { ptr in
-                            onChunk(userData, ptr)
+                    if !delta.isEmpty {
+                        callbackQueue.sync {
+                            delta.withCString { ptr in onChunk(userData, ptr) }
                         }
+                    }
+
+                    if Task.isCancelled {
+                        callbackQueue.sync {
+                            "Cancelled".withCString { ptr in
+                                onError(userData, FFIErrorCode.cancelled.rawValue, ptr)
+                            }
+                        }
+                        semaphore.signal()
+                        return
                     }
                 }
+            } else {
+                // Fallback: prompt-based JSON streaming
+                let structuredPrompt = """
+                \(promptString)
 
-                if Task.isCancelled {
-                    callbackQueue.sync {
-                        "Cancelled".withCString { ptr in
-                            onError(userData, FFIErrorCode.cancelled.rawValue, ptr)
+                IMPORTANT: You must respond with valid JSON that matches this schema exactly:
+                \(schemaString)
+
+                Output only the JSON object, with no additional text, markdown formatting, or explanation.
+                """
+                let stream = state.session.streamResponse(to: structuredPrompt, options: options)
+                var previousLength = 0
+
+                for try await partialResponse in stream {
+                    let content = partialResponse.content
+                    let delta = String(content.dropFirst(previousLength))
+                    previousLength = content.count
+
+                    if !delta.isEmpty {
+                        callbackQueue.sync {
+                            delta.withCString { ptr in onChunk(userData, ptr) }
                         }
                     }
-                    semaphore.signal()
-                    return
+
+                    if Task.isCancelled {
+                        callbackQueue.sync {
+                            "Cancelled".withCString { ptr in
+                                onError(userData, FFIErrorCode.cancelled.rawValue, ptr)
+                            }
+                        }
+                        semaphore.signal()
+                        return
+                    }
                 }
             }
 
@@ -1153,8 +1303,7 @@ public func fm_session_stream_json(
             }
         } catch {
             callbackQueue.sync {
-                let errorCode = FFIErrorCode.generationFailed.rawValue
-                let errorMessage = error.localizedDescription
+                let (errorCode, errorMessage) = mapStreamingError(error)
                 errorMessage.withCString { ptr in
                     onError(userData, errorCode, ptr)
                 }
@@ -1169,95 +1318,22 @@ public func fm_session_stream_json(
     state.setTask(nil)
 }
 
-/// Extracts JSON from a response that might contain markdown code blocks or extra text.
-private func extractJson(from content: String) -> String {
-    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-
-    // Check for markdown code block
-    if trimmed.hasPrefix("```") {
-        // Find the end of the opening fence
-        if let startRange = trimmed.range(of: "\n") {
-            let afterFence = trimmed[startRange.upperBound...]
-            // Find closing fence
-            if let endRange = afterFence.range(of: "```") {
-                return String(afterFence[..<endRange.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-            }
+/// Maps a streaming error to an FFI error code and message, with full error differentiation.
+private func mapStreamingError(_ error: Error) -> (Int32, String) {
+    if let toolError = error as? ToolError {
+        var msg = toolError.message
+        if let name = toolError.toolName {
+            msg += " [tool: \(name)]"
         }
+        return (FFIErrorCode.toolError.rawValue, msg)
+    } else if let genError = error as? LanguageModelSession.GenerationError {
+        let (code, message) = mapGenerationError(genError)
+        return (code.rawValue, message)
+    } else if let timeoutError = error as? TimeoutError {
+        return (FFIErrorCode.timeout.rawValue, timeoutError.message)
+    } else {
+        return (FFIErrorCode.generationFailed.rawValue, error.localizedDescription)
     }
-
-    // Check if it starts with { or [ (already JSON) - extract balanced JSON
-    if trimmed.hasPrefix("{") {
-        return extractBalancedJson(from: trimmed, open: "{", close: "}")
-    }
-    if trimmed.hasPrefix("[") {
-        return extractBalancedJson(from: trimmed, open: "[", close: "]")
-    }
-
-    // Try to find JSON object or array in the content - use whichever comes first
-    let objectStart = trimmed.firstIndex(of: "{")
-    let arrayStart = trimmed.firstIndex(of: "[")
-
-    if let obj = objectStart, let arr = arrayStart {
-        // Both found - use whichever comes first
-        if obj <= arr {
-            return extractBalancedJson(from: String(trimmed[obj...]), open: "{", close: "}")
-        } else {
-            return extractBalancedJson(from: String(trimmed[arr...]), open: "[", close: "]")
-        }
-    } else if let obj = objectStart {
-        return extractBalancedJson(from: String(trimmed[obj...]), open: "{", close: "}")
-    } else if let arr = arrayStart {
-        return extractBalancedJson(from: String(trimmed[arr...]), open: "[", close: "]")
-    }
-
-    // Return as-is
-    return trimmed
-}
-
-/// Extracts a balanced JSON structure (object or array) from the start of a string.
-/// Handles nested structures and strings with escaped characters.
-private func extractBalancedJson(from content: String, open: Character, close: Character) -> String {
-    var depth = 0
-    var inString = false
-    var escapeNext = false
-    var endIndex = content.startIndex
-
-    for (index, char) in content.enumerated() {
-        let stringIndex = content.index(content.startIndex, offsetBy: index)
-
-        if escapeNext {
-            escapeNext = false
-            continue
-        }
-
-        if char == "\\" && inString {
-            escapeNext = true
-            continue
-        }
-
-        if char == "\"" {
-            inString = !inString
-            continue
-        }
-
-        if !inString {
-            if char == open {
-                depth += 1
-            } else if char == close {
-                depth -= 1
-                if depth == 0 {
-                    endIndex = content.index(after: stringIndex)
-                    break
-                }
-            }
-        }
-    }
-
-    // If we found a balanced structure, return it; otherwise return original
-    if depth == 0 && endIndex > content.startIndex {
-        return String(content[..<endIndex])
-    }
-    return content
 }
 
 // MARK: - String Helpers
