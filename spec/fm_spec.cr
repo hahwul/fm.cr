@@ -64,6 +64,61 @@ private struct TestWithGuide
   getter year : Int32
 end
 
+private enum TestColor
+  Red
+  Green
+  Blue
+end
+
+private struct TestWithHash
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter metadata : Hash(String, String)
+end
+
+private struct TestWithEnum
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter color : TestColor
+end
+
+private struct TestWithUnion
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter value : String | Int32
+end
+
+private struct TestWithAllInts
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter i8 : Int8
+  getter i16 : Int16
+  getter i64 : Int64
+  getter u8 : UInt8
+  getter u16 : UInt16
+  getter u32 : UInt32
+  getter u64 : UInt64
+end
+
+private struct TestWithFloat32
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter score : Float32
+end
+
+private struct TestWithDefault
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter name : String
+  getter label : String = "default"
+end
+
 private class TestTool < Fm::Tool
   def name : String
     "testTool"
@@ -676,6 +731,333 @@ describe Fm do
     it "has expected values" do
       Fm::Guardrails::Default.value.should eq 0
       Fm::Guardrails::PermissiveContentTransformations.value.should eq 1
+    end
+  end
+
+  describe "Generable advanced types" do
+    it "generates Hash schema with additionalProperties" do
+      schema = TestWithHash.json_schema
+      props = schema["properties"].as_h
+      meta = props["metadata"]
+      meta["type"].as_s.should eq "object"
+      meta["additionalProperties"]["type"].as_s.should eq "string"
+    end
+
+    it "generates Enum schema with string enum values" do
+      schema = TestWithEnum.json_schema
+      props = schema["properties"].as_h
+      color = props["color"]
+      color["type"].as_s.should eq "string"
+      values = color["enum"].as_a.map(&.as_s)
+      values.should eq ["red", "green", "blue"]
+    end
+
+    it "generates Union schema with oneOf" do
+      schema = TestWithUnion.json_schema
+      props = schema["properties"].as_h
+      val = props["value"]
+      one_of = val["oneOf"].as_a
+      one_of.size.should eq 2
+      types = one_of.map { |s| s["type"].as_s }
+      types.should contain("string")
+      types.should contain("integer")
+    end
+
+    it "generates integer schema for all integer types" do
+      schema = TestWithAllInts.json_schema
+      props = schema["properties"].as_h
+      %w[i8 i16 i64 u8 u16 u32 u64].each do |field|
+        props[field]["type"].as_s.should eq "integer"
+      end
+    end
+
+    it "generates number schema for Float32" do
+      schema = TestWithFloat32.json_schema
+      props = schema["properties"].as_h
+      props["score"]["type"].as_s.should eq "number"
+    end
+
+    it "excludes fields with default values from required" do
+      schema = TestWithDefault.json_schema
+      required = schema["required"].as_a.map(&.as_s)
+      required.should contain("name")
+      required.should_not contain("label")
+    end
+
+    it "serializes json_schema to valid JSON" do
+      schema = TestPerson.json_schema
+      json_str = schema.to_json
+      parsed = JSON.parse(json_str)
+      parsed["type"].as_s.should eq "object"
+    end
+  end
+
+  describe "error hierarchy" do
+    it "all GenerationError subclasses inherit from Error" do
+      errors = [
+        Fm::ExceededContextWindowSizeError.new("test"),
+        Fm::AssetsUnavailableError.new("test"),
+        Fm::GuardrailViolationError.new("test"),
+        Fm::UnsupportedGuideError.new("test"),
+        Fm::UnsupportedLanguageOrLocaleError.new("test"),
+        Fm::DecodingFailureError.new("test"),
+        Fm::RateLimitedError.new("test"),
+        Fm::ConcurrentRequestsError.new("test"),
+        Fm::RefusalError.new("test"),
+        Fm::InvalidGenerationSchemaError.new("test"),
+      ]
+      errors.each do |err|
+        err.is_a?(Fm::GenerationError).should be_true
+        err.is_a?(Fm::Error).should be_true
+        err.is_a?(Exception).should be_true
+      end
+    end
+
+    it "ToolCallError inherits from Error not GenerationError" do
+      err = Fm::ToolCallError.new("tool", "msg")
+      err.is_a?(Fm::Error).should be_true
+      err.is_a?(Fm::GenerationError).should be_false
+    end
+
+    it "ToolCallError without arguments_json" do
+      err = Fm::ToolCallError.new("myTool", "failed")
+      err.tool_name.should eq "myTool"
+      err.arguments_json.should be_nil
+      err.message.should eq "Tool 'myTool' failed: failed"
+    end
+
+    it "TimeoutError inherits from Error not GenerationError" do
+      err = Fm::TimeoutError.new("timed out")
+      err.is_a?(Fm::Error).should be_true
+      err.is_a?(Fm::GenerationError).should be_false
+    end
+
+    it "InternalError inherits from Error not GenerationError" do
+      err = Fm::InternalError.new("internal")
+      err.is_a?(Fm::Error).should be_true
+      err.is_a?(Fm::GenerationError).should be_false
+    end
+  end
+
+  describe "make_error_ptr" do
+    it "allocates a null pointer" do
+      ptr = Fm.make_error_ptr
+      ptr.value.null?.should be_true
+    end
+  end
+
+  describe "ToolResult JSON serialization" do
+    it "success result omits error field" do
+      output = Fm::ToolOutput.new("ok")
+      result = Fm::ToolResult.success(output)
+      json = result.to_json
+      parsed = JSON.parse(json)
+      parsed["success"].as_bool.should be_true
+      parsed["content"].as_s.should eq "ok"
+      parsed["error"]?.should be_nil
+    end
+
+    it "error result omits content field" do
+      result = Fm::ToolResult.error("fail")
+      json = result.to_json
+      parsed = JSON.parse(json)
+      parsed["success"].as_bool.should be_false
+      parsed["error"].as_s.should eq "fail"
+      parsed["content"]?.should be_nil
+    end
+
+    it "ToolResult can be constructed directly" do
+      result = Fm::ToolResult.new(success: true, content: "data", error: nil)
+      result.success.should be_true
+      result.content.should eq "data"
+      result.error.should be_nil
+    end
+  end
+
+  describe "context utilities (advanced)" do
+    it "transcript_to_text with prompt and response fields" do
+      json = %({"prompt":"What is 2+2?","response":"4"})
+      text = Fm.transcript_to_text(json)
+      text.should contain("What is 2+2?")
+      text.should contain("4")
+    end
+
+    it "transcript_to_text with deeply nested messages" do
+      json = %({"conversation":{"messages":[{"role":"user","content":"Deep nested"}]}})
+      text = Fm.transcript_to_text(json)
+      text.should contain("user: Deep nested")
+    end
+
+    it "transcript_to_text with role but no content falls back to text fields" do
+      json = %([{"role":"system"},{"text":"fallback text"}])
+      text = Fm.transcript_to_text(json)
+      text.should contain("fallback text")
+    end
+
+    it "transcript_to_text returns raw json for non-array non-object primitives" do
+      json = %("just a string")
+      text = Fm.transcript_to_text(json)
+      text.should eq %("just a string")
+    end
+
+    it "handles large transcript for context_usage" do
+      messages = (1..50).map { |i| %({"role":"user","content":"Message number #{i} with some padding text"}) }
+      json = "[#{messages.join(",")}]"
+      limit = Fm::ContextLimit.new(max_tokens: 100, reserved_response_tokens: 10, chars_per_token: 4)
+      usage = Fm.context_usage_from_transcript(json, limit)
+      usage.estimated_tokens.should be > 50
+      usage.over_limit?.should be_true
+    end
+
+    it "context_usage with all reserved tokens" do
+      json = %([{"role":"user","content":"Hi"}])
+      limit = Fm::ContextLimit.new(max_tokens: 100, reserved_response_tokens: 100, chars_per_token: 4)
+      usage = Fm.context_usage_from_transcript(json, limit)
+      usage.available_tokens.should eq 0
+      usage.over_limit?.should be_true
+    end
+
+    it "context_usage with reserved exceeding max" do
+      json = %([{"role":"user","content":"Hi"}])
+      limit = Fm::ContextLimit.new(max_tokens: 10, reserved_response_tokens: 20, chars_per_token: 4)
+      usage = Fm.context_usage_from_transcript(json, limit)
+      usage.available_tokens.should eq 0 # clamped to 0
+    end
+
+    it "compacted_instructions with whitespace-only inputs" do
+      Fm.compacted_instructions("  ", "  ").should be_nil
+      Fm.compacted_instructions("  ", "summary").should eq "Conversation summary:\nsummary"
+      Fm.compacted_instructions("base", "  ").should eq "base"
+    end
+
+    it "estimate_tokens with single char per token" do
+      Fm.estimate_tokens("hello", 1).should eq 5
+    end
+
+    it "estimate_tokens with large chars_per_token" do
+      Fm.estimate_tokens("hello", 100).should eq 1
+    end
+
+    it "ContextUsage can be constructed directly" do
+      usage = Fm::ContextUsage.new(
+        estimated_tokens: 500_i32,
+        max_tokens: 4096_i32,
+        reserved_response_tokens: 512_i32,
+        available_tokens: 3584_i32,
+        utilization: 0.122_f32,
+        over_limit: false,
+      )
+      usage.estimated_tokens.should eq 500
+      usage.max_tokens.should eq 4096
+      usage.reserved_response_tokens.should eq 512
+      usage.available_tokens.should eq 3584
+      usage.over_limit?.should be_false
+    end
+  end
+
+  describe "GenerationOptions (advanced)" do
+    it "serializes all parameters together" do
+      mode = Fm::SamplingMode.random(top: 20, seed: 55_u64)
+      opts = Fm::GenerationOptions.new(
+        temperature: 0.9,
+        sampling_mode: mode,
+        max_response_tokens: 256_u32,
+      )
+      json = opts.to_json
+      json.should contain("0.9")
+      json.should contain(%("top":20))
+      json.should contain(%("seed":55))
+      json.should contain(%("maximumResponseTokens":256))
+    end
+
+    it "effective_sampling_mode returns nil when nothing set" do
+      opts = Fm::GenerationOptions.default
+      opts.effective_sampling_mode.should be_nil
+    end
+
+    it "serializes only temperature" do
+      opts = Fm::GenerationOptions.new(temperature: 1.5)
+      json = opts.to_json
+      parsed = JSON.parse(json)
+      parsed["temperature"].as_f.should eq 1.5
+      parsed["sampling"]?.should be_nil
+      parsed["maximumResponseTokens"]?.should be_nil
+    end
+
+    it "serializes only max_response_tokens" do
+      opts = Fm::GenerationOptions.new(max_response_tokens: 1024_u32)
+      json = opts.to_json
+      parsed = JSON.parse(json)
+      parsed["maximumResponseTokens"].as_i.should eq 1024
+      parsed["temperature"]?.should be_nil
+    end
+
+    it "serializes random sampling with probability_threshold" do
+      mode = Fm::SamplingMode.random(probability_threshold: 0.95)
+      opts = Fm::GenerationOptions.new(sampling_mode: mode)
+      json = opts.to_json
+      json.should contain(%("probabilityThreshold":0.95))
+      json.should_not contain(%("top"))
+    end
+  end
+
+  describe "Response" do
+    it "handles empty content" do
+      response = Fm::Response.new("")
+      response.content.should eq ""
+      response.to_s.should eq ""
+    end
+
+    it "handles multi-line content" do
+      response = Fm::Response.new("line1\nline2\nline3")
+      response.content.should eq "line1\nline2\nline3"
+      io = IO::Memory.new
+      response.to_s(io)
+      io.to_s.should eq "line1\nline2\nline3"
+    end
+
+    it "handles unicode content" do
+      response = Fm::Response.new("안녕하세요 🌍")
+      response.content.should eq "안녕하세요 🌍"
+    end
+  end
+
+  describe "Tool edge cases" do
+    it "serializes empty tools array" do
+      tools = [] of Fm::Tool
+      json = Fm::Tool.tools_to_json(tools)
+      parsed = JSON.parse(json)
+      parsed.as_a.size.should eq 0
+    end
+
+    it "tool call with missing key returns KeyError" do
+      tool = TestTool.new
+      args = JSON.parse(%({}))
+      expect_raises(KeyError) do
+        tool.call(args)
+      end
+    end
+  end
+
+  describe "CompactionConfig" do
+    it "default summary_options has expected temperature" do
+      config = Fm::CompactionConfig.new
+      json = config.summary_options.to_json
+      json.should contain("0.2")
+      json.should contain("256")
+    end
+  end
+
+  describe "Sampling enum" do
+    it "has expected values" do
+      Fm::Sampling::Random.value.should eq 0
+      Fm::Sampling::Greedy.value.should eq 1
+    end
+  end
+
+  describe "DEFAULT_CONTEXT_TOKENS" do
+    it "equals 4096" do
+      Fm::DEFAULT_CONTEXT_TOKENS.should eq 4096
     end
   end
 end
