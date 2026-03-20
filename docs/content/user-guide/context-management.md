@@ -20,12 +20,10 @@ json = session.transcript_json
 restored = Fm::Session.from_transcript(model, json)
 response = restored.respond("Continue our conversation.")
 
-# Restore with instructions, tools, and adapters
-adapter = Fm::Adapter.new(asset: "MyAdapter")
+# Restore with instructions and tools
 restored = Fm::Session.from_transcript(model, json,
   instructions: "You are a helpful assistant.",
-  tools: [my_tool],
-  adapters: [adapter]
+  tools: [my_tool]
 )
 ```
 

@@ -29,7 +29,7 @@ Creates a new session.
 | `model` | `SystemLanguageModel` | -- | The language model to use |
 | `instructions` | `String?` | `nil` | System instructions for the model |
 | `tools` | `Array(Tool)?` | `nil` | Tools available to the model |
-| `adapters` | `Array(Adapter)?` | `nil` | Adapters to apply to the model |
+| ~~`adapters`~~ | ~~`Array(Adapter)?`~~ | ~~`nil`~~ | **Deprecated** — AdapterAsset was removed in macOS 26.2 SDK |
 
 ### `.from_transcript`
 
@@ -39,12 +39,11 @@ Fm::Session.from_transcript(
   transcript_json : String,
   *,
   instructions : String? = nil,
-  tools : Array(Fm::Tool)? = nil,
-  adapters : Array(Fm::Adapter)? = nil
+  tools : Array(Fm::Tool)? = nil
 ) : Fm::Session
 ```
 
-Restores a session from a previously exported transcript JSON string. You can optionally provide instructions, tools, and adapters to configure the restored session. All optional parameters are backward compatible.
+Restores a session from a previously exported transcript JSON string. You can optionally provide instructions and tools to configure the restored session.
 
 ## Response Methods
 

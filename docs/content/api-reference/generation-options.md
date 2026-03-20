@@ -87,6 +87,8 @@ Random sampling with optional constraints.
 | `seed` | `UInt64?` | Seed for reproducible output |
 
 > **Note:** `top` and `probability_threshold` cannot both be specified.
+>
+> **Note:** `seed` alone (without `top` or `probability_threshold`) is not supported by Apple's FoundationModels API and will be ignored. Use `seed` together with `top` or `probability_threshold` for reproducible sampling.
 
 ### Properties
 

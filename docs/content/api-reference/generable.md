@@ -44,6 +44,9 @@ Character.json_schema
 | `Float32`, `Float64` | `"number"` |
 | `Bool` | `"boolean"` |
 | `Array(T)` | `"array"` with `items` |
+| `Hash(String, V)` | `"object"` with `additionalProperties` |
+| `Enum` | `"string"` with `enum` (member names in snake_case) |
+| `Union(A, B, ...)` | `oneOf` array (non-nil union types) |
 | Nested `Generable` type | `"object"` with properties |
 
 ### Nested Types
@@ -65,6 +68,42 @@ struct Person
 
   getter name : String
   getter address : Address
+end
+```
+
+### Enum Types
+
+Crystal enums are automatically mapped to JSON Schema `enum` with snake_case member names:
+
+```crystal
+enum Priority
+  Low
+  Medium
+  High
+end
+
+struct Task
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter title : String
+  getter priority : Priority
+end
+
+Task.json_schema
+# priority => {"type":"string","enum":["low","medium","high"]}
+```
+
+### Hash Types
+
+`Hash(String, V)` maps to a JSON Schema object with `additionalProperties`:
+
+```crystal
+struct Config
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter settings : Hash(String, String)
 end
 ```
 
