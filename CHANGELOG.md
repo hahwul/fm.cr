@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.3.0
+
+### Added
+- Per-tool bridge: each Crystal tool is registered as an individual native FoundationModels Tool with its own name, description, and schema (falls back to generic bridge when schema decoding fails)
+- `Generable` type support for `Hash`, `Enum`, and non-nil `Union` types in JSON Schema generation
+- Prompt-based fallback for structured output when native `GenerationSchema` decoding fails
+
+### Fixed
+- `GenerationOptions` now properly maps `top-k`, `top-p`, and `seed` to native `GenerationOptions.SamplingMode` (previously ignored)
+- Streaming errors now use full `GenerationError` differentiation instead of generic `generationFailed`
+
+### Improved
+- Structured output (`respond_json`, `stream_json`) uses native `GenerationSchema` API for guaranteed schema compliance
+- Unified streaming error handling via `mapStreamingError`
+
+### Deprecated
+- `Adapter` class (`AdapterAsset` was removed in macOS 26.2 SDK)
+
 ## v0.2.0
 
 ### Added
