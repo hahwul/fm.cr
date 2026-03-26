@@ -140,7 +140,7 @@ end
 describe Fm do
   it "has a version" do
     Fm::VERSION.should_not be_nil
-    Fm::VERSION.should eq "0.1.0"
+    Fm::VERSION.should eq "0.3.0"
   end
 
   describe Fm::GenerationOptions do
@@ -1058,6 +1058,65 @@ describe Fm do
   describe "DEFAULT_CONTEXT_TOKENS" do
     it "equals 4096" do
       Fm::DEFAULT_CONTEXT_TOKENS.should eq 4096
+    end
+  end
+
+  describe "GenerationOptions validation" do
+    it "raises when temperature is negative" do
+      expect_raises(ArgumentError, "temperature must be between 0.0 and 2.0") do
+        Fm::GenerationOptions.new(temperature: -0.1)
+      end
+    end
+
+    it "raises when temperature exceeds 2.0" do
+      expect_raises(ArgumentError, "temperature must be between 0.0 and 2.0") do
+        Fm::GenerationOptions.new(temperature: 2.1)
+      end
+    end
+
+    it "accepts temperature at boundaries" do
+      Fm::GenerationOptions.new(temperature: 0.0).temperature.should eq 0.0
+      Fm::GenerationOptions.new(temperature: 2.0).temperature.should eq 2.0
+    end
+
+    it "accepts nil temperature" do
+      Fm::GenerationOptions.new(temperature: nil).temperature.should be_nil
+    end
+  end
+
+  describe "SamplingMode validation" do
+    it "raises when top is zero" do
+      expect_raises(ArgumentError, "top must be positive") do
+        Fm::SamplingMode.random(top: 0)
+      end
+    end
+
+    it "raises when top is negative" do
+      expect_raises(ArgumentError, "top must be positive") do
+        Fm::SamplingMode.random(top: -1)
+      end
+    end
+
+    it "raises when probability_threshold is negative" do
+      expect_raises(ArgumentError, "probability_threshold must be between 0.0 and 1.0") do
+        Fm::SamplingMode.random(probability_threshold: -0.1)
+      end
+    end
+
+    it "raises when probability_threshold exceeds 1.0" do
+      expect_raises(ArgumentError, "probability_threshold must be between 0.0 and 1.0") do
+        Fm::SamplingMode.random(probability_threshold: 1.1)
+      end
+    end
+
+    it "accepts probability_threshold at boundaries" do
+      Fm::SamplingMode.random(probability_threshold: 0.0).probability_threshold.should eq 0.0
+      Fm::SamplingMode.random(probability_threshold: 1.0).probability_threshold.should eq 1.0
+    end
+
+    it "accepts valid top value" do
+      Fm::SamplingMode.random(top: 1).top.should eq 1
+      Fm::SamplingMode.random(top: 100).top.should eq 100
     end
   end
 end

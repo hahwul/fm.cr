@@ -28,6 +28,7 @@ module Fm
       tools_json, user_data, @tool_box = Session.prepare_tools(tools)
       tools_json_ptr = tools_json ? tools_json.to_unsafe : Pointer(LibC::Char).null
       adapter_ptrs, adapter_count = Session.prepare_adapters(adapters)
+      @adapter_ptrs = adapter_ptrs
       @adapters = adapters
 
       error = Fm.make_error_ptr
@@ -54,7 +55,7 @@ module Fm
     end
 
     # :nodoc:
-    protected def initialize(@ptr : Void*, @tool_box : Void*?, @adapters : Array(Adapter)? = nil)
+    protected def initialize(@ptr : Void*, @tool_box : Void*?, @adapters : Array(Adapter)? = nil, @adapter_ptrs : Pointer(Void*) = Pointer(Void*).null)
     end
 
     # Creates a session from a transcript JSON string.
@@ -105,7 +106,7 @@ module Fm
         )
       end
 
-      new(ptr, tool_box, adapters)
+      new(ptr, tool_box, adapters, adapter_ptrs)
     end
 
     # :nodoc:
@@ -295,6 +296,7 @@ module Fm
         LibFmFfi.fm_session_free(@ptr)
         @ptr = Pointer(Void).null
       end
+      @adapter_ptrs = Pointer(Void*).null
     end
 
     # -- Helper methods --
