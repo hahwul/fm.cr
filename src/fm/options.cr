@@ -54,6 +54,12 @@ module Fm
       if top && probability_threshold
         raise ArgumentError.new("Cannot specify both top (top-k) and probability_threshold (top-p)")
       end
+      if t = top
+        raise ArgumentError.new("top must be positive, got #{t}") if t <= 0
+      end
+      if p = probability_threshold
+        raise ArgumentError.new("probability_threshold must be between 0.0 and 1.0, got #{p}") unless 0.0 <= p <= 1.0
+      end
       new(strategy: Sampling::Random, top: top, probability_threshold: probability_threshold, seed: seed)
     end
 
@@ -94,6 +100,9 @@ module Fm
       @max_response_tokens : UInt32? = nil,
       @seed : UInt64? = nil,
     )
+      if temp = @temperature
+        raise ArgumentError.new("temperature must be between 0.0 and 2.0, got #{temp}") unless 0.0 <= temp <= 2.0
+      end
     end
 
     # Returns the default options.
