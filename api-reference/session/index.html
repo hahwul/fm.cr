@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Conversation session management">
+  <title>Session - fm.cr</title>
+  <meta property="og:title" content="Session">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://fm.cr.hahwul.com/api-reference/session/">
+<meta property="og:description" content="Conversation session management">
+<meta property="og:image" content="https://fm.cr.hahwul.com/og-images/api-reference-session.svg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Session">
+<meta name="twitter:description" content="Conversation session management">
+<meta name="twitter:image" content="https://fm.cr.hahwul.com/og-images/api-reference-session.svg">
+  <link rel="stylesheet" href="https://fm.cr.hahwul.com/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  
+
+  <link rel="icon" type="image/png" href="/icons/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
+  <link rel="shortcut icon" href="/icons/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="fm.cr" />
+  <link rel="manifest" href="/icons/site.webmanifest" />
+</head>
+<body data-section="api-reference">
+<header class="docs-header">
+  <a href="https://fm.cr.hahwul.com/" class="logo">fm.cr <span>Documentation</span></a>
+  <nav>
+    <a href="https://fm.cr.hahwul.com/user-guide/">User Guide</a>
+    <a href="https://fm.cr.hahwul.com/api-reference/">API Reference</a>
+  </nav>
+  <div class="header-right">
+    <button class="search-trigger" onclick="openSearch()" title="Search (⌘K)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Search</span>
+      <kbd>⌘K</kbd>
+    </button>
+    <a href="https://github.com/hahwul/fm.cr">GitHub</a>
+  </div>
+</header>
+<div class="search-overlay" id="searchOverlay" onclick="if(event.target===this)closeSearch()">
+  <div class="search-modal">
+    <div class="search-input-wrap">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="searchInput" placeholder="Search documentation..." autocomplete="off">
+      <kbd onclick="closeSearch()">ESC</kbd>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
+<div class="docs-container">
+  <aside class="docs-sidebar">
+    <a href="https://fm.cr.hahwul.com/" class="sidebar-logo">
+      <img src="https://fm.cr.hahwul.com/images/logo.webp" alt="fm.cr">
+    </a>
+    <div class="sidebar-section">
+      <div class="sidebar-title">User Guide</div>
+      <ul class="sidebar-links">
+        <li><a href="https://fm.cr.hahwul.com/user-guide/getting-started/">Getting Started</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/basic-usage/">Basic Usage</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/streaming/">Streaming</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/structured-output/">Structured Output</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/tool-calling/">Tool Calling</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/context-management/">Context Management</a></li>
+      </ul>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-title">API Reference</div>
+      <ul class="sidebar-links">
+        <li><a href="https://fm.cr.hahwul.com/api-reference/system-language-model/">SystemLanguageModel</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/session/">Session</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/generable/">Generable & Guide</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/generation-options/">GenerationOptions</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/tools/">Tools</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/context/">Context</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/errors/">Errors</a></li>
+      </ul>
+    </div>
+  </aside>
+  <main class="docs-main">
+    <h1>Session</h1>
+    <h2 id="overview">Overview</h2>
+<p><code>Fm::Session</code> manages a conversation with the on-device model. It holds the conversation history and provides methods for generating responses, streaming, structured output, and transcript management.</p>
+<h2 id="constructors">Constructors</h2>
+<h3 id="new"><code>.new</code></h3>
+<pre><code class="language-crystal hljs">Fm::Session.new(
+  model : Fm::SystemLanguageModel,
+  *,
+  instructions : String? = nil,
+  tools : Array(Fm::Tool)? = nil,
+  adapters : Array(Fm::Adapter)? = nil
+)
+</code></pre>
+<p>Creates a new session.</p>
+<table>
+<thead>
+<tr>
+<th>Parameter</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>model</code></td>
+<td><code>SystemLanguageModel</code></td>
+<td>--</td>
+<td>The language model to use</td>
+</tr>
+<tr>
+<td><code>instructions</code></td>
+<td><code>String?</code></td>
+<td><code>nil</code></td>
+<td>System instructions for the model</td>
+</tr>
+<tr>
+<td><code>tools</code></td>
+<td><code>Array(Tool)?</code></td>
+<td><code>nil</code></td>
+<td>Tools available to the model</td>
+</tr>
+<tr>
+<td><del><code>adapters</code></del></td>
+<td><del><code>Array(Adapter)?</code></del></td>
+<td><del><code>nil</code></del></td>
+<td><strong>Deprecated</strong> — AdapterAsset was removed in macOS 26.2 SDK</td>
+</tr>
+</tbody>
+</table>
+<h3 id="from-transcript"><code>.from_transcript</code></h3>
+<pre><code class="language-crystal hljs">Fm::Session.from_transcript(
+  model : Fm::SystemLanguageModel,
+  transcript_json : String,
+  *,
+  instructions : String? = nil,
+  tools : Array(Fm::Tool)? = nil
+) : Fm::Session
+</code></pre>
+<p>Restores a session from a previously exported transcript JSON string. You can optionally provide instructions and tools to configure the restored session.</p>
+<h2 id="response-methods">Response Methods</h2>
+<h3 id="respond"><code>#respond</code></h3>
+<pre><code class="language-crystal hljs">session.respond(
+  prompt : String,
+  options : Fm::GenerationOptions = Fm::GenerationOptions.default
+) : Fm::Response
+</code></pre>
+<p>Sends a prompt and returns the complete response. Blocks until generation is finished.</p>
+<pre><code class="language-crystal hljs">session.respond(
+  prompt : String,
+  options : Fm::GenerationOptions = Fm::GenerationOptions.default,
+  *,
+  timeout : Time::Span
+) : Fm::Response
+</code></pre>
+<p>Overload with a timeout. Raises <code>Fm::TimeoutError</code> if the timeout is exceeded.</p>
+<h3 id="stream"><code>#stream</code></h3>
+<pre><code class="language-crystal hljs">session.stream(
+  prompt : String,
+  options : Fm::GenerationOptions = Fm::GenerationOptions.default,
+  &amp;block : String -&gt;
+) : Nil
+</code></pre>
+<p>Sends a prompt and streams the response. The block receives each text chunk as it's generated.</p>
+<h3 id="respond-json"><code>#respond_json</code></h3>
+<pre><code class="language-crystal hljs">session.respond_json(
+  prompt : String,
+  schema_json : String,
+  options : Fm::GenerationOptions = Fm::GenerationOptions.default
+) : String
+</code></pre>
+<p>Returns a JSON string conforming to the given schema.</p>
+<h3 id="respond-structured"><code>#respond_structured</code></h3>
+<pre><code class="language-crystal hljs">session.respond_structured(
+  type : T.class,
+  prompt : String,
+  options : Fm::GenerationOptions = Fm::GenerationOptions.default
+) : T forall T
+</code></pre>
+<p>Returns a deserialized instance of type <code>T</code>. The type must include both <code>JSON::Serializable</code> and <code>Fm::Generable</code>.</p>
+<h3 id="stream-json"><code>#stream_json</code></h3>
+<pre><code class="language-crystal hljs">session.stream_json(
+  prompt : String,
+  schema_json : String,
+  options : Fm::GenerationOptions = Fm::GenerationOptions.default,
+  &amp;block : String -&gt;
+) : Nil
+</code></pre>
+<p>Streams a JSON response matching the given schema. The block receives each chunk.</p>
+<h2 id="session-control">Session Control</h2>
+<h3 id="cancel"><code>#cancel</code></h3>
+<pre><code class="language-crystal hljs">session.cancel : Nil
+</code></pre>
+<p>Cancels an ongoing generation (streaming or blocking).</p>
+<h3 id="responding"><code>#responding?</code></h3>
+<pre><code class="language-crystal hljs">session.responding? : Bool
+</code></pre>
+<p>Returns <code>true</code> if the session is currently generating a response.</p>
+<h3 id="prewarm"><code>#prewarm</code></h3>
+<pre><code class="language-crystal hljs">session.prewarm(prompt_prefix : String? = nil) : Nil
+</code></pre>
+<p>Prewarms the model with an optional prompt prefix. This can reduce latency for the next generation call.</p>
+<h2 id="transcript">Transcript</h2>
+<h3 id="transcript-json"><code>#transcript_json</code></h3>
+<pre><code class="language-crystal hljs">session.transcript_json : String
+</code></pre>
+<p>Exports the full conversation history as a JSON string. Use this to save and later restore sessions with <code>Session.from_transcript</code>.</p>
+<h2 id="response">Response</h2>
+<h3 id="fmresponse"><code>Fm::Response</code></h3>
+<p>A struct wrapping the model's text output.</p>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>content</code></td>
+<td><code>String</code></td>
+<td>The generated text content</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-crystal hljs">response = session.respond(&quot;Hello&quot;)
+puts response.content
+puts response.to_s  # Same as response.content
+</code></pre>
+
+    <div class="docs-footer">
+      <p>fm.cr - Crystal bindings for Apple FoundationModels.framework</p>
+    </div>
+  </main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+
+<script src="https://fm.cr.hahwul.com/js/search.js"></script>
+</body>
+</html>

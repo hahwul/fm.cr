@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Error types and exception handling">
+  <title>Errors - fm.cr</title>
+  <meta property="og:title" content="Errors">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://fm.cr.hahwul.com/api-reference/errors/">
+<meta property="og:description" content="Error types and exception handling">
+<meta property="og:image" content="https://fm.cr.hahwul.com/og-images/api-reference-errors.svg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Errors">
+<meta name="twitter:description" content="Error types and exception handling">
+<meta name="twitter:image" content="https://fm.cr.hahwul.com/og-images/api-reference-errors.svg">
+  <link rel="stylesheet" href="https://fm.cr.hahwul.com/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  
+
+  <link rel="icon" type="image/png" href="/icons/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
+  <link rel="shortcut icon" href="/icons/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="fm.cr" />
+  <link rel="manifest" href="/icons/site.webmanifest" />
+</head>
+<body data-section="api-reference">
+<header class="docs-header">
+  <a href="https://fm.cr.hahwul.com/" class="logo">fm.cr <span>Documentation</span></a>
+  <nav>
+    <a href="https://fm.cr.hahwul.com/user-guide/">User Guide</a>
+    <a href="https://fm.cr.hahwul.com/api-reference/">API Reference</a>
+  </nav>
+  <div class="header-right">
+    <button class="search-trigger" onclick="openSearch()" title="Search (⌘K)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Search</span>
+      <kbd>⌘K</kbd>
+    </button>
+    <a href="https://github.com/hahwul/fm.cr">GitHub</a>
+  </div>
+</header>
+<div class="search-overlay" id="searchOverlay" onclick="if(event.target===this)closeSearch()">
+  <div class="search-modal">
+    <div class="search-input-wrap">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="searchInput" placeholder="Search documentation..." autocomplete="off">
+      <kbd onclick="closeSearch()">ESC</kbd>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
+<div class="docs-container">
+  <aside class="docs-sidebar">
+    <a href="https://fm.cr.hahwul.com/" class="sidebar-logo">
+      <img src="https://fm.cr.hahwul.com/images/logo.webp" alt="fm.cr">
+    </a>
+    <div class="sidebar-section">
+      <div class="sidebar-title">User Guide</div>
+      <ul class="sidebar-links">
+        <li><a href="https://fm.cr.hahwul.com/user-guide/getting-started/">Getting Started</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/basic-usage/">Basic Usage</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/streaming/">Streaming</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/structured-output/">Structured Output</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/tool-calling/">Tool Calling</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/context-management/">Context Management</a></li>
+      </ul>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-title">API Reference</div>
+      <ul class="sidebar-links">
+        <li><a href="https://fm.cr.hahwul.com/api-reference/system-language-model/">SystemLanguageModel</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/session/">Session</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/generable/">Generable & Guide</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/generation-options/">GenerationOptions</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/tools/">Tools</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/context/">Context</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/errors/">Errors</a></li>
+      </ul>
+    </div>
+  </aside>
+  <main class="docs-main">
+    <h1>Errors</h1>
+    <h2 id="overview">Overview</h2>
+<p>All fm.cr errors inherit from <code>Fm::Error</code>, which itself inherits from <code>Exception</code>. This allows you to catch all fm.cr errors with a single rescue clause or handle specific error types individually.</p>
+<h2 id="error-hierarchy">Error Hierarchy</h2>
+<pre><code>Exception
+  └── Fm::Error
+        ├── Fm::ModelNotAvailableError
+        ├── Fm::DeviceNotEligibleError
+        ├── Fm::AppleIntelligenceNotEnabledError
+        ├── Fm::ModelNotReadyError
+        ├── Fm::InvalidInputError
+        ├── Fm::GenerationError
+        ├── Fm::ExceededContextWindowSizeError
+        ├── Fm::AssetsUnavailableError
+        ├── Fm::GuardrailViolationError
+        ├── Fm::UnsupportedGuideError
+        ├── Fm::UnsupportedLanguageOrLocaleError
+        ├── Fm::DecodingFailureError
+        ├── Fm::RateLimitedError
+        ├── Fm::ConcurrentRequestsError
+        ├── Fm::RefusalError
+        ├── Fm::InvalidGenerationSchemaError
+        ├── Fm::TimeoutError
+        ├── Fm::ToolCallError
+        └── Fm::InternalError
+</code></pre>
+<h2 id="error-types">Error Types</h2>
+<h3 id="availability-errors">Availability Errors</h3>
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ModelNotAvailableError</code></td>
+<td>Model is not available for an unspecified reason</td>
+</tr>
+<tr>
+<td><code>DeviceNotEligibleError</code></td>
+<td>Device doesn&#39;t support Apple Intelligence</td>
+</tr>
+<tr>
+<td><code>AppleIntelligenceNotEnabledError</code></td>
+<td>Apple Intelligence is disabled in System Settings</td>
+</tr>
+<tr>
+<td><code>ModelNotReadyError</code></td>
+<td>Model is still downloading</td>
+</tr>
+</tbody>
+</table>
+<h3 id="generation-errors">Generation Errors</h3>
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GenerationError</code></td>
+<td>Generation failed</td>
+</tr>
+<tr>
+<td><code>ExceededContextWindowSizeError</code></td>
+<td>Input exceeds the context window</td>
+</tr>
+<tr>
+<td><code>AssetsUnavailableError</code></td>
+<td>Required model assets are unavailable</td>
+</tr>
+<tr>
+<td><code>GuardrailViolationError</code></td>
+<td>Generation blocked by safety guardrails</td>
+</tr>
+<tr>
+<td><code>RateLimitedError</code></td>
+<td>Too many requests in a short time</td>
+</tr>
+<tr>
+<td><code>ConcurrentRequestsError</code></td>
+<td>Multiple concurrent requests to the same session</td>
+</tr>
+<tr>
+<td><code>RefusalError</code></td>
+<td>Model refused to generate a response</td>
+</tr>
+</tbody>
+</table>
+<h3 id="inputschema-errors">Input/Schema Errors</h3>
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>InvalidInputError</code></td>
+<td>Invalid input provided</td>
+</tr>
+<tr>
+<td><code>UnsupportedGuideError</code></td>
+<td>Unsupported guide constraint</td>
+</tr>
+<tr>
+<td><code>UnsupportedLanguageOrLocaleError</code></td>
+<td>Unsupported language or locale</td>
+</tr>
+<tr>
+<td><code>DecodingFailureError</code></td>
+<td>Failed to decode structured output</td>
+</tr>
+<tr>
+<td><code>InvalidGenerationSchemaError</code></td>
+<td>Invalid JSON schema for generation</td>
+</tr>
+</tbody>
+</table>
+<h3 id="tool-errors">Tool Errors</h3>
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ToolCallError</code></td>
+<td>Tool invocation failed</td>
+</tr>
+</tbody>
+</table>
+<p><code>ToolCallError</code> provides additional context:</p>
+<table>
+<thead>
+<tr>
+<th>Property</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>tool_name</code></td>
+<td><code>String</code></td>
+<td>Name of the tool that failed</td>
+</tr>
+<tr>
+<td><code>arguments_json</code></td>
+<td><code>String?</code></td>
+<td>JSON string of the arguments passed to the tool</td>
+</tr>
+</tbody>
+</table>
+<h3 id="other-errors">Other Errors</h3>
+<table>
+<thead>
+<tr>
+<th>Error</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TimeoutError</code></td>
+<td>Operation timed out</td>
+</tr>
+<tr>
+<td><code>InternalError</code></td>
+<td>Internal FFI error</td>
+</tr>
+</tbody>
+</table>
+<h2 id="usage-example">Usage Example</h2>
+<pre><code class="language-crystal hljs">begin
+  response = session.respond(&quot;Hello&quot;)
+rescue ex : Fm::TimeoutError
+  puts &quot;Timed out: #{ex.message}&quot;
+rescue ex : Fm::ToolCallError
+  puts &quot;Tool '#{ex.tool_name}' failed: #{ex.message}&quot;
+  puts &quot;Arguments: #{ex.arguments_json}&quot; if ex.arguments_json
+rescue ex : Fm::GuardrailViolationError
+  puts &quot;Blocked by guardrails: #{ex.message}&quot;
+rescue ex : Fm::RateLimitedError
+  puts &quot;Rate limited, try again later&quot;
+rescue ex : Fm::Error
+  puts &quot;fm.cr error: #{ex.message}&quot;
+end
+</code></pre>
+<h2 id="error-codes">Error Codes</h2>
+<p>Errors are mapped from Swift error codes returned by the FFI layer. The mapping is handled internally by <code>Fm.error_from_swift</code>.</p>
+
+    <div class="docs-footer">
+      <p>fm.cr - Crystal bindings for Apple FoundationModels.framework</p>
+    </div>
+  </main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+
+<script src="https://fm.cr.hahwul.com/js/search.js"></script>
+</body>
+</html>

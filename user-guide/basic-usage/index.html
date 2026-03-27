@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Models, sessions, and generating responses">
+  <title>Basic Usage - fm.cr</title>
+  <meta property="og:title" content="Basic Usage">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://fm.cr.hahwul.com/user-guide/basic-usage/">
+<meta property="og:description" content="Models, sessions, and generating responses">
+<meta property="og:image" content="https://fm.cr.hahwul.com/og-images/user-guide-basic-usage.svg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Basic Usage">
+<meta name="twitter:description" content="Models, sessions, and generating responses">
+<meta name="twitter:image" content="https://fm.cr.hahwul.com/og-images/user-guide-basic-usage.svg">
+  <link rel="stylesheet" href="https://fm.cr.hahwul.com/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  
+
+  <link rel="icon" type="image/png" href="/icons/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
+  <link rel="shortcut icon" href="/icons/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="fm.cr" />
+  <link rel="manifest" href="/icons/site.webmanifest" />
+</head>
+<body data-section="user-guide">
+<header class="docs-header">
+  <a href="https://fm.cr.hahwul.com/" class="logo">fm.cr <span>Documentation</span></a>
+  <nav>
+    <a href="https://fm.cr.hahwul.com/user-guide/">User Guide</a>
+    <a href="https://fm.cr.hahwul.com/api-reference/">API Reference</a>
+  </nav>
+  <div class="header-right">
+    <button class="search-trigger" onclick="openSearch()" title="Search (⌘K)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Search</span>
+      <kbd>⌘K</kbd>
+    </button>
+    <a href="https://github.com/hahwul/fm.cr">GitHub</a>
+  </div>
+</header>
+<div class="search-overlay" id="searchOverlay" onclick="if(event.target===this)closeSearch()">
+  <div class="search-modal">
+    <div class="search-input-wrap">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="searchInput" placeholder="Search documentation..." autocomplete="off">
+      <kbd onclick="closeSearch()">ESC</kbd>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
+<div class="docs-container">
+  <aside class="docs-sidebar">
+    <a href="https://fm.cr.hahwul.com/" class="sidebar-logo">
+      <img src="https://fm.cr.hahwul.com/images/logo.webp" alt="fm.cr">
+    </a>
+    <div class="sidebar-section">
+      <div class="sidebar-title">User Guide</div>
+      <ul class="sidebar-links">
+        <li><a href="https://fm.cr.hahwul.com/user-guide/getting-started/">Getting Started</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/basic-usage/">Basic Usage</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/streaming/">Streaming</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/structured-output/">Structured Output</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/tool-calling/">Tool Calling</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/context-management/">Context Management</a></li>
+      </ul>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-title">API Reference</div>
+      <ul class="sidebar-links">
+        <li><a href="https://fm.cr.hahwul.com/api-reference/system-language-model/">SystemLanguageModel</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/session/">Session</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/generable/">Generable & Guide</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/generation-options/">GenerationOptions</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/tools/">Tools</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/context/">Context</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/errors/">Errors</a></li>
+      </ul>
+    </div>
+  </aside>
+  <main class="docs-main">
+    <h1>Basic Usage</h1>
+    <h2 id="creating-a-model">Creating a Model</h2>
+<p>The <code>SystemLanguageModel</code> represents Apple's on-device foundation model. Create one with default settings or customize it with use case and guardrail options:</p>
+<pre><code class="language-crystal hljs">require &quot;fm&quot;
+
+# Default model
+model = Fm::SystemLanguageModel.new
+
+# With specific use case and guardrails
+model = Fm::SystemLanguageModel.new(
+  use_case: Fm::UseCase::ContentTagging,
+  guardrails: Fm::Guardrails::PermissiveContentTransformations
+)
+</code></pre>
+<h3 id="use-cases">Use Cases</h3>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>UseCase::General</code></td>
+<td>General-purpose language model use (default)</td>
+</tr>
+<tr>
+<td><code>UseCase::ContentTagging</code></td>
+<td>Optimized for content tagging and classification</td>
+</tr>
+</tbody>
+</table>
+<h3 id="guardrails">Guardrails</h3>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Guardrails::Default</code></td>
+<td>Default guardrails applied to all generation</td>
+</tr>
+<tr>
+<td><code>Guardrails::PermissiveContentTransformations</code></td>
+<td>More permissive guardrails for content transformation tasks</td>
+</tr>
+</tbody>
+</table>
+<h2 id="creating-a-session">Creating a Session</h2>
+<p>A <code>Session</code> holds conversation state between you and the model. You can provide system instructions and tools:</p>
+<pre><code class="language-crystal hljs">session = Fm::Session.new(model, instructions: &quot;You are a helpful assistant.&quot;)
+</code></pre>
+<p>Sessions maintain multi-turn conversation context automatically.</p>
+<h2 id="generating-responses">Generating Responses</h2>
+<p>Use <code>respond</code> for a blocking call that returns the complete response:</p>
+<pre><code class="language-crystal hljs">response = session.respond(&quot;What is Crystal?&quot;)
+puts response.content
+
+# Follow-up (session maintains context)
+response = session.respond(&quot;What about its type system?&quot;)
+puts response.content
+</code></pre>
+<h3 id="with-a-timeout">With a Timeout</h3>
+<p>Set a timeout to limit how long the model can take:</p>
+<pre><code class="language-crystal hljs">response = session.respond(&quot;Complex question&quot;, timeout: 10.seconds)
+puts response.content
+</code></pre>
+<h3 id="with-generation-options">With Generation Options</h3>
+<p>Customize temperature, sampling strategy, and max tokens:</p>
+<pre><code class="language-crystal hljs">options = Fm::GenerationOptions.new(
+  temperature: 0.8,
+  sampling: Fm::Sampling::Random,
+  max_response_tokens: 500_u32,
+  seed: 42_u64  # optional: set a seed for reproducible output
+)
+
+response = session.respond(&quot;Write a haiku.&quot;, options)
+puts response.content
+</code></pre>
+<h2 id="error-handling">Error Handling</h2>
+<p>All fm.cr errors inherit from <code>Fm::Error</code>. Use specific error types for targeted handling:</p>
+<pre><code class="language-crystal hljs">begin
+  response = session.respond(&quot;Hello&quot;)
+rescue ex : Fm::TimeoutError
+  puts &quot;Timed out: #{ex.message}&quot;
+rescue ex : Fm::ToolCallError
+  puts &quot;Tool '#{ex.tool_name}' failed: #{ex.message}&quot;
+rescue ex : Fm::GuardrailViolationError
+  puts &quot;Guardrail violation: #{ex.message}&quot;
+rescue ex : Fm::Error
+  puts &quot;Error: #{ex.message}&quot;
+end
+</code></pre>
+<p>See the <a href="/api-reference/errors/">Errors</a> reference for the complete list.</p>
+<h2 id="token-usage">Token Usage</h2>
+<p>Estimate how many tokens a prompt will use (requires macOS 26.4+):</p>
+<pre><code class="language-crystal hljs">if tokens = model.token_usage_for(&quot;Hello, world!&quot;)
+  puts &quot;Prompt tokens: #{tokens}&quot;
+end
+</code></pre>
+<p>You can also estimate token usage for instructions and tools configuration:</p>
+<pre><code class="language-crystal hljs">if tokens = model.token_usage_for_tools(&quot;You are a helpful assistant.&quot;, tools_json)
+  puts &quot;System tokens: #{tokens}&quot;
+end
+</code></pre>
+<h2 id="prewarming">Prewarming</h2>
+<p>Hint the model ahead of time with a prompt prefix to reduce latency:</p>
+<pre><code class="language-crystal hljs">session.prewarm(&quot;Tell me about&quot;)
+</code></pre>
+
+    <div class="docs-footer">
+      <p>fm.cr - Crystal bindings for Apple FoundationModels.framework</p>
+    </div>
+  </main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+
+<script src="https://fm.cr.hahwul.com/js/search.js"></script>
+</body>
+</html>

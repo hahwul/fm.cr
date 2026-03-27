@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Transcripts, token estimation, and session compaction">
+  <title>Context Management - fm.cr</title>
+  <meta property="og:title" content="Context Management">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://fm.cr.hahwul.com/user-guide/context-management/">
+<meta property="og:description" content="Transcripts, token estimation, and session compaction">
+<meta property="og:image" content="https://fm.cr.hahwul.com/og-images/user-guide-context-management.svg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Context Management">
+<meta name="twitter:description" content="Transcripts, token estimation, and session compaction">
+<meta name="twitter:image" content="https://fm.cr.hahwul.com/og-images/user-guide-context-management.svg">
+  <link rel="stylesheet" href="https://fm.cr.hahwul.com/css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  
+
+  <link rel="icon" type="image/png" href="/icons/favicon-96x96.png" sizes="96x96" />
+  <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
+  <link rel="shortcut icon" href="/icons/favicon.ico" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-title" content="fm.cr" />
+  <link rel="manifest" href="/icons/site.webmanifest" />
+</head>
+<body data-section="user-guide">
+<header class="docs-header">
+  <a href="https://fm.cr.hahwul.com/" class="logo">fm.cr <span>Documentation</span></a>
+  <nav>
+    <a href="https://fm.cr.hahwul.com/user-guide/">User Guide</a>
+    <a href="https://fm.cr.hahwul.com/api-reference/">API Reference</a>
+  </nav>
+  <div class="header-right">
+    <button class="search-trigger" onclick="openSearch()" title="Search (⌘K)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span>Search</span>
+      <kbd>⌘K</kbd>
+    </button>
+    <a href="https://github.com/hahwul/fm.cr">GitHub</a>
+  </div>
+</header>
+<div class="search-overlay" id="searchOverlay" onclick="if(event.target===this)closeSearch()">
+  <div class="search-modal">
+    <div class="search-input-wrap">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="searchInput" placeholder="Search documentation..." autocomplete="off">
+      <kbd onclick="closeSearch()">ESC</kbd>
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
+<div class="docs-container">
+  <aside class="docs-sidebar">
+    <a href="https://fm.cr.hahwul.com/" class="sidebar-logo">
+      <img src="https://fm.cr.hahwul.com/images/logo.webp" alt="fm.cr">
+    </a>
+    <div class="sidebar-section">
+      <div class="sidebar-title">User Guide</div>
+      <ul class="sidebar-links">
+        <li><a href="https://fm.cr.hahwul.com/user-guide/getting-started/">Getting Started</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/basic-usage/">Basic Usage</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/streaming/">Streaming</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/structured-output/">Structured Output</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/tool-calling/">Tool Calling</a></li>
+        <li><a href="https://fm.cr.hahwul.com/user-guide/context-management/">Context Management</a></li>
+      </ul>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-title">API Reference</div>
+      <ul class="sidebar-links">
+        <li><a href="https://fm.cr.hahwul.com/api-reference/system-language-model/">SystemLanguageModel</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/session/">Session</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/generable/">Generable & Guide</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/generation-options/">GenerationOptions</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/tools/">Tools</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/context/">Context</a></li>
+        <li><a href="https://fm.cr.hahwul.com/api-reference/errors/">Errors</a></li>
+      </ul>
+    </div>
+  </aside>
+  <main class="docs-main">
+    <h1>Context Management</h1>
+    <h2 id="overview">Overview</h2>
+<p>Long conversations can exceed the model's context window. fm.cr provides tools to monitor context usage, export and restore conversation state, and automatically compact sessions when needed.</p>
+<h2 id="transcripts">Transcripts</h2>
+<p>Export the current conversation as JSON for persistence or analysis:</p>
+<pre><code class="language-crystal hljs"># Save conversation state
+json = session.transcript_json
+
+# Restore later
+restored = Fm::Session.from_transcript(model, json)
+response = restored.respond(&quot;Continue our conversation.&quot;)
+
+# Restore with instructions and tools
+restored = Fm::Session.from_transcript(model, json,
+  instructions: &quot;You are a helpful assistant.&quot;,
+  tools: [my_tool]
+)
+</code></pre>
+<p>Convert a transcript to readable text:</p>
+<pre><code class="language-crystal hljs">text = Fm.transcript_to_text(session.transcript_json)
+puts text
+</code></pre>
+<h2 id="context-usage-estimation">Context Usage Estimation</h2>
+<p>Monitor how much of the context window is consumed:</p>
+<pre><code class="language-crystal hljs">limit = Fm::ContextLimit.default_on_device  # 4096 tokens
+usage = Fm.context_usage_from_transcript(session.transcript_json, limit)
+
+puts &quot;Estimated tokens: #{usage.estimated_tokens}&quot;
+puts &quot;Available tokens: #{usage.available_tokens}&quot;
+puts &quot;Utilization: #{(usage.utilization * 100).round(1)}%&quot;
+puts &quot;Over limit: #{usage.over_limit?}&quot;
+</code></pre>
+<h3 id="contextlimit">ContextLimit</h3>
+<p>Configure the context window parameters:</p>
+<pre><code class="language-crystal hljs"># Default on-device limit (4096 tokens)
+limit = Fm::ContextLimit.default_on_device
+
+# Custom limit
+limit = Fm::ContextLimit.new(
+  max_tokens: 4096,
+  reserved_response_tokens: 512,
+  chars_per_token: 4
+)
+</code></pre>
+<h3 id="contextusage">ContextUsage</h3>
+<p>The <code>ContextUsage</code> struct provides these fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>estimated_tokens</code></td>
+<td><code>Int32</code></td>
+<td>Estimated tokens consumed by transcript</td>
+</tr>
+<tr>
+<td><code>max_tokens</code></td>
+<td><code>Int32</code></td>
+<td>Maximum tokens configured</td>
+</tr>
+<tr>
+<td><code>reserved_response_tokens</code></td>
+<td><code>Int32</code></td>
+<td>Tokens reserved for next response</td>
+</tr>
+<tr>
+<td><code>available_tokens</code></td>
+<td><code>Int32</code></td>
+<td>Estimated tokens remaining</td>
+</tr>
+<tr>
+<td><code>utilization</code></td>
+<td><code>Float32</code></td>
+<td>Usage ratio (0.0 - 1.0+)</td>
+</tr>
+<tr>
+<td><code>over_limit?</code></td>
+<td><code>Bool</code></td>
+<td>Whether estimate exceeds budget</td>
+</tr>
+</tbody>
+</table>
+<h2 id="automatic-compaction">Automatic Compaction</h2>
+<p>When a conversation gets too long, compact it by summarizing earlier messages and starting a fresh session:</p>
+<pre><code class="language-crystal hljs">limit = Fm::ContextLimit.default_on_device
+
+if result = Fm.compact_session_if_needed(model, session, limit, base_instructions: &quot;Be helpful.&quot;)
+  session = result.session
+  puts &quot;Compacted. Summary: #{result.summary}&quot;
+end
+</code></pre>
+<p>The method returns <code>nil</code> if compaction is not needed (context is within limits).</p>
+<h3 id="compactionconfig">CompactionConfig</h3>
+<p>Customize the compaction behavior:</p>
+<pre><code class="language-crystal hljs">config = Fm::CompactionConfig.new(
+  chunk_tokens: 800,
+  max_summary_tokens: 400,
+  instructions: &quot;Summarize the conversation concisely.&quot;,
+  summary_options: Fm::GenerationOptions.new(
+    temperature: 0.2,
+    max_response_tokens: 256_u32
+  )
+)
+
+result = Fm.compact_session_if_needed(model, session, limit, config: config)
+</code></pre>
+<h2 id="manual-compaction">Manual Compaction</h2>
+<p>Compact a transcript directly without checking limits:</p>
+<pre><code class="language-crystal hljs">summary = Fm.compact_transcript(model, session.transcript_json)
+puts summary
+</code></pre>
+<p>Create a new session from a summary:</p>
+<pre><code class="language-crystal hljs">new_session = Fm.session_from_summary(model, &quot;Be helpful.&quot;, summary)
+</code></pre>
+<h2 id="token-estimation">Token Estimation</h2>
+<p>Estimate tokens for arbitrary text:</p>
+<pre><code class="language-crystal hljs">tokens = Fm.estimate_tokens(&quot;Hello, world!&quot;, chars_per_token: 4)
+puts tokens  # =&gt; 4
+</code></pre>
+
+    <div class="docs-footer">
+      <p>fm.cr - Crystal bindings for Apple FoundationModels.framework</p>
+    </div>
+  </main>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script>hljs.highlightAll();</script>
+
+<script src="https://fm.cr.hahwul.com/js/search.js"></script>
+</body>
+</html>
