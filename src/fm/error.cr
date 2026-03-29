@@ -1,4 +1,29 @@
 module Fm
+  # Error codes returned by the Swift FFI layer.
+  #
+  # These map directly to the integer codes from `ffi.swift` and are used
+  # by `error_from_swift` / `Session.error_from_stream` to convert raw
+  # codes into typed Crystal exceptions.
+  enum GenerationErrorCode
+    Unknown                    =  0
+    ModelNotAvailable          =  1
+    Generation                 =  2
+    Cancelled                  =  3
+    ToolCall                   =  4
+    InvalidInput               =  5
+    Timeout                    =  6
+    ExceededContextWindowSize  =  7
+    AssetsUnavailable          =  8
+    GuardrailViolation         =  9
+    UnsupportedGuide           = 10
+    UnsupportedLanguageOrLocale = 11
+    DecodingFailure            = 12
+    RateLimited                = 13
+    ConcurrentRequests         = 14
+    Refusal                    = 15
+    InvalidGenerationSchema    = 16
+  end
+
   # Base error class for all FoundationModels errors.
   class Error < Exception
   end
@@ -120,29 +145,32 @@ module Fm
 
     LibFmFfi.fm_error_free(error_ptr)
 
-    case code
-    when 1 then ModelNotAvailableError.new(message)
-    when 2 then GenerationError.new(message)
-    when 3 then GenerationError.new("Operation cancelled")
-    when 4
+    error_code = GenerationErrorCode.from_value?(code)
+    return InternalError.new(message) unless error_code
+
+    case error_code
+    in .unknown?                           then InternalError.new(message)
+    in .model_not_available?              then ModelNotAvailableError.new(message)
+    in .generation?                       then GenerationError.new(message)
+    in .cancelled?                        then GenerationError.new("Operation cancelled")
+    in .tool_call?
       ToolCallError.new(
         tool_name: tool_name || "unknown",
         message: message,
         arguments_json: tool_args
       )
-    when  5 then InvalidInputError.new(message)
-    when  6 then TimeoutError.new(message)
-    when  7 then ExceededContextWindowSizeError.new(message)
-    when  8 then AssetsUnavailableError.new(message)
-    when  9 then GuardrailViolationError.new(message)
-    when 10 then UnsupportedGuideError.new(message)
-    when 11 then UnsupportedLanguageOrLocaleError.new(message)
-    when 12 then DecodingFailureError.new(message)
-    when 13 then RateLimitedError.new(message)
-    when 14 then ConcurrentRequestsError.new(message)
-    when 15 then RefusalError.new(message)
-    when 16 then InvalidGenerationSchemaError.new(message)
-    else         InternalError.new(message)
+    in .invalid_input?                    then InvalidInputError.new(message)
+    in .timeout?                          then TimeoutError.new(message)
+    in .exceeded_context_window_size?     then ExceededContextWindowSizeError.new(message)
+    in .assets_unavailable?               then AssetsUnavailableError.new(message)
+    in .guardrail_violation?              then GuardrailViolationError.new(message)
+    in .unsupported_guide?                then UnsupportedGuideError.new(message)
+    in .unsupported_language_or_locale?   then UnsupportedLanguageOrLocaleError.new(message)
+    in .decoding_failure?                 then DecodingFailureError.new(message)
+    in .rate_limited?                     then RateLimitedError.new(message)
+    in .concurrent_requests?              then ConcurrentRequestsError.new(message)
+    in .refusal?                          then RefusalError.new(message)
+    in .invalid_generation_schema?        then InvalidGenerationSchemaError.new(message)
     end
   end
 

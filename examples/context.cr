@@ -12,7 +12,7 @@ session.respond("What is Crystal?")
 session.respond("How does it compare to Ruby?")
 
 # Check context usage
-transcript = session.transcript_json
+transcript = session.transcript
 limit = Fm::ContextLimit.default_on_device
 usage = Fm.context_usage_from_transcript(transcript, limit)
 

@@ -63,6 +63,11 @@ module Fm
     end
   end
 
+  # Estimates token usage from a `Transcript` object and a context limit.
+  def self.context_usage_from_transcript(transcript : Transcript, limit : ContextLimit) : ContextUsage
+    context_usage_from_transcript(transcript.json, limit)
+  end
+
   # Estimates token usage from transcript JSON and a context limit.
   def self.context_usage_from_transcript(transcript_json : String, limit : ContextLimit) : ContextUsage
     transcript_text = transcript_to_text(transcript_json)

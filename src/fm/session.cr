@@ -58,6 +58,34 @@ module Fm
     protected def initialize(@ptr : Void*, @tool_box : Void*?, @adapters : Array(Adapter)? = nil, @adapter_ptrs : Pointer(Void*) = Pointer(Void*).null)
     end
 
+    # Creates a session from a `Transcript` object.
+    #
+    # Optionally restores instructions, tools, and adapters so the
+    # resumed session behaves identically to the original.
+    #
+    # ```
+    # transcript = session.transcript
+    # restored = Fm::Session.from_transcript(model, transcript,
+    #   instructions: "Be helpful.",
+    #   tools: [my_tool],
+    #   adapters: [my_adapter],
+    # )
+    # ```
+    def self.from_transcript(
+      model : SystemLanguageModel,
+      transcript : Transcript,
+      *,
+      instructions : String? = nil,
+      tools : Array(Tool)? = nil,
+      adapters : Array(Adapter)? = nil,
+    ) : self
+      from_transcript(model, transcript.json,
+        instructions: instructions,
+        tools: tools,
+        adapters: adapters,
+      )
+    end
+
     # Creates a session from a transcript JSON string.
     #
     # Optionally restores instructions, tools, and adapters so the
@@ -191,7 +219,18 @@ module Fm
       LibFmFfi.fm_session_is_responding(@ptr)
     end
 
-    # Gets the session transcript as a JSON string.
+    # Returns the session transcript as a `Transcript` object.
+    #
+    # ```
+    # transcript = session.transcript
+    # puts transcript.entries.size
+    # File.write("session.json", transcript.to_json)
+    # ```
+    def transcript : Transcript
+      Transcript.new(transcript_json)
+    end
+
+    # Gets the session transcript as a raw JSON string.
     def transcript_json : String
       error = Fm.make_error_ptr
       ptr = LibFmFfi.fm_session_get_transcript(@ptr, error)
@@ -273,21 +312,25 @@ module Fm
 
     # :nodoc:
     protected def self.error_from_stream(code : Int32, message : String) : Error
-      case code
-      when  3 then GenerationError.new("Operation cancelled")
-      when  4 then ToolCallError.new("unknown", message)
-      when  6 then TimeoutError.new(message)
-      when  7 then ExceededContextWindowSizeError.new(message)
-      when  8 then AssetsUnavailableError.new(message)
-      when  9 then GuardrailViolationError.new(message)
-      when 10 then UnsupportedGuideError.new(message)
-      when 11 then UnsupportedLanguageOrLocaleError.new(message)
-      when 12 then DecodingFailureError.new(message)
-      when 13 then RateLimitedError.new(message)
-      when 14 then ConcurrentRequestsError.new(message)
-      when 15 then RefusalError.new(message)
-      when 16 then InvalidGenerationSchemaError.new(message)
-      else         GenerationError.new(message)
+      error_code = GenerationErrorCode.from_value?(code)
+      return GenerationError.new(message) unless error_code
+
+      case error_code
+      in .cancelled?                        then GenerationError.new("Operation cancelled")
+      in .tool_call?                        then ToolCallError.new("unknown", message)
+      in .timeout?                          then TimeoutError.new(message)
+      in .exceeded_context_window_size?     then ExceededContextWindowSizeError.new(message)
+      in .assets_unavailable?               then AssetsUnavailableError.new(message)
+      in .guardrail_violation?              then GuardrailViolationError.new(message)
+      in .unsupported_guide?                then UnsupportedGuideError.new(message)
+      in .unsupported_language_or_locale?   then UnsupportedLanguageOrLocaleError.new(message)
+      in .decoding_failure?                 then DecodingFailureError.new(message)
+      in .rate_limited?                     then RateLimitedError.new(message)
+      in .concurrent_requests?              then ConcurrentRequestsError.new(message)
+      in .refusal?                          then RefusalError.new(message)
+      in .invalid_generation_schema?        then InvalidGenerationSchemaError.new(message)
+      in .unknown?, .model_not_available?,
+         .generation?, .invalid_input?      then GenerationError.new(message)
       end
     end
 
