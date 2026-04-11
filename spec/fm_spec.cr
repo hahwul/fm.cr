@@ -1119,4 +1119,252 @@ describe Fm do
       Fm::SamplingMode.random(top: 100).top.should eq 100
     end
   end
+
+  describe "CancelledError" do
+    it "inherits from Error not GenerationError" do
+      err = Fm::CancelledError.new("Operation cancelled")
+      err.is_a?(Fm::Error).should be_true
+      err.is_a?(Fm::GenerationError).should be_false
+    end
+
+    it "carries a message" do
+      err = Fm::CancelledError.new("cancelled by user")
+      err.message.should eq "cancelled by user"
+    end
+  end
+
+  describe "Fm.error_from_stream" do
+    it "maps cancelled code to CancelledError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::Cancelled.value, "cancelled")
+      err.is_a?(Fm::CancelledError).should be_true
+    end
+
+    it "maps model_not_available to ModelNotAvailableError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::ModelNotAvailable.value, "not available")
+      err.is_a?(Fm::ModelNotAvailableError).should be_true
+    end
+
+    it "maps invalid_input to InvalidInputError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::InvalidInput.value, "bad input")
+      err.is_a?(Fm::InvalidInputError).should be_true
+    end
+
+    it "maps unknown to InternalError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::Unknown.value, "unknown")
+      err.is_a?(Fm::InternalError).should be_true
+    end
+
+    it "maps timeout to TimeoutError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::Timeout.value, "timed out")
+      err.is_a?(Fm::TimeoutError).should be_true
+    end
+
+    it "maps tool_call to ToolCallError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::ToolCall.value, "tool failed")
+      err.is_a?(Fm::ToolCallError).should be_true
+    end
+
+    it "maps exceeded_context_window_size to ExceededContextWindowSizeError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::ExceededContextWindowSize.value, "too long")
+      err.is_a?(Fm::ExceededContextWindowSizeError).should be_true
+    end
+
+    it "maps guardrail_violation to GuardrailViolationError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::GuardrailViolation.value, "violation")
+      err.is_a?(Fm::GuardrailViolationError).should be_true
+    end
+
+    it "maps rate_limited to RateLimitedError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::RateLimited.value, "slow down")
+      err.is_a?(Fm::RateLimitedError).should be_true
+    end
+
+    it "maps concurrent_requests to ConcurrentRequestsError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::ConcurrentRequests.value, "busy")
+      err.is_a?(Fm::ConcurrentRequestsError).should be_true
+    end
+
+    it "maps refusal to RefusalError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::Refusal.value, "refused")
+      err.is_a?(Fm::RefusalError).should be_true
+    end
+
+    it "maps invalid_generation_schema to InvalidGenerationSchemaError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::InvalidGenerationSchema.value, "bad schema")
+      err.is_a?(Fm::InvalidGenerationSchemaError).should be_true
+    end
+
+    it "maps assets_unavailable to AssetsUnavailableError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::AssetsUnavailable.value, "downloading")
+      err.is_a?(Fm::AssetsUnavailableError).should be_true
+    end
+
+    it "maps unsupported_guide to UnsupportedGuideError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::UnsupportedGuide.value, "bad guide")
+      err.is_a?(Fm::UnsupportedGuideError).should be_true
+    end
+
+    it "maps unsupported_language_or_locale to UnsupportedLanguageOrLocaleError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::UnsupportedLanguageOrLocale.value, "unsupported")
+      err.is_a?(Fm::UnsupportedLanguageOrLocaleError).should be_true
+    end
+
+    it "maps decoding_failure to DecodingFailureError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::DecodingFailure.value, "decode failed")
+      err.is_a?(Fm::DecodingFailureError).should be_true
+    end
+
+    it "maps generation to GenerationError" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::Generation.value, "generation error")
+      err.is_a?(Fm::GenerationError).should be_true
+    end
+
+    it "falls back to GenerationError for unrecognized codes" do
+      err = Fm.error_from_stream(9999, "unknown code")
+      err.is_a?(Fm::GenerationError).should be_true
+    end
+  end
+
+  describe "GenerationErrorCode" do
+    it "has correct integer values for all codes" do
+      Fm::GenerationErrorCode::Unknown.value.should eq 0
+      Fm::GenerationErrorCode::ModelNotAvailable.value.should eq 1
+      Fm::GenerationErrorCode::Generation.value.should eq 2
+      Fm::GenerationErrorCode::Cancelled.value.should eq 3
+      Fm::GenerationErrorCode::ToolCall.value.should eq 4
+      Fm::GenerationErrorCode::InvalidInput.value.should eq 5
+      Fm::GenerationErrorCode::Timeout.value.should eq 6
+      Fm::GenerationErrorCode::ExceededContextWindowSize.value.should eq 7
+      Fm::GenerationErrorCode::AssetsUnavailable.value.should eq 8
+      Fm::GenerationErrorCode::GuardrailViolation.value.should eq 9
+      Fm::GenerationErrorCode::UnsupportedGuide.value.should eq 10
+      Fm::GenerationErrorCode::UnsupportedLanguageOrLocale.value.should eq 11
+      Fm::GenerationErrorCode::DecodingFailure.value.should eq 12
+      Fm::GenerationErrorCode::RateLimited.value.should eq 13
+      Fm::GenerationErrorCode::ConcurrentRequests.value.should eq 14
+      Fm::GenerationErrorCode::Refusal.value.should eq 15
+      Fm::GenerationErrorCode::InvalidGenerationSchema.value.should eq 16
+    end
+
+    it "resolves from integer values" do
+      Fm::GenerationErrorCode.from_value?(0).should eq Fm::GenerationErrorCode::Unknown
+      Fm::GenerationErrorCode.from_value?(16).should eq Fm::GenerationErrorCode::InvalidGenerationSchema
+      Fm::GenerationErrorCode.from_value?(99).should be_nil
+    end
+  end
+
+  describe "Transcript" do
+    it "creates from JSON string" do
+      transcript = Fm::Transcript.new(%({"transcript":{"entries":[]}}))
+      transcript.json.should eq %({"transcript":{"entries":[]}})
+    end
+
+    it "parses entries" do
+      json = %({"transcript":{"entries":[{"role":"user","contents":[]}]}})
+      transcript = Fm::Transcript.new(json)
+      transcript.entries.size.should eq 1
+      transcript.entries[0]["role"].as_s.should eq "user"
+    end
+
+    it "returns empty entries for missing transcript key" do
+      transcript = Fm::Transcript.new(%({"other":"data"}))
+      transcript.entries.should be_empty
+    end
+
+    it "returns empty entries for missing entries key" do
+      transcript = Fm::Transcript.new(%({"transcript":{}}))
+      transcript.entries.should be_empty
+    end
+
+    it "caches parsed JSON" do
+      transcript = Fm::Transcript.new(%({"transcript":{"entries":[]}}))
+      first = transcript.to_any
+      second = transcript.to_any
+      first.should eq second
+    end
+
+    it "reports size" do
+      json = %({"transcript":{"entries":[{"role":"user"},{"role":"response"}]}})
+      transcript = Fm::Transcript.new(json)
+      transcript.size.should eq 2
+    end
+
+    it "reports empty?" do
+      Fm::Transcript.new(%({"transcript":{"entries":[]}})).empty?.should be_true
+      Fm::Transcript.new(%({"transcript":{"entries":[{"role":"user"}]}})).empty?.should be_false
+    end
+
+    it "iterates with each" do
+      json = %({"transcript":{"entries":[{"role":"user"},{"role":"response"}]}})
+      transcript = Fm::Transcript.new(json)
+      roles = [] of String
+      transcript.each { |entry| roles << entry["role"].as_s }
+      roles.should eq ["user", "response"]
+    end
+
+    it "serializes to JSON" do
+      original = %({"transcript":{"entries":[]}})
+      transcript = Fm::Transcript.new(original)
+      transcript.to_json.should eq original
+    end
+
+    it "writes to IO" do
+      original = %({"key":"value"})
+      transcript = Fm::Transcript.new(original)
+      io = IO::Memory.new
+      transcript.to_json(io)
+      io.to_s.should eq original
+    end
+
+    it "creates from_json" do
+      transcript = Fm::Transcript.from_json(%({"transcript":{"entries":[]}}))
+      transcript.entries.should be_empty
+    end
+  end
+
+  describe "Response" do
+    it "reports empty?" do
+      Fm::Response.new("").empty?.should be_true
+      Fm::Response.new("hello").empty?.should be_false
+    end
+  end
+
+  describe "StreamState" do
+    it "starts without error" do
+      chunks = [] of String
+      state = Fm::Session::StreamState.new(->(s : String) { chunks << s })
+      state.error.should be_nil
+      state.error_code.should eq 0
+    end
+
+    it "records error" do
+      state = Fm::Session::StreamState.new(->(s : String) {})
+      state.error = "something failed"
+      state.error_code = 6
+      state.error.should eq "something failed"
+      state.error_code.should eq 6
+    end
+
+    it "raises recorded error" do
+      state = Fm::Session::StreamState.new(->(s : String) {})
+      state.error = "timed out"
+      state.error_code = Fm::GenerationErrorCode::Timeout.value
+      expect_raises(Fm::TimeoutError) do
+        state.raise_if_error!
+      end
+    end
+
+    it "does not raise when no error" do
+      state = Fm::Session::StreamState.new(->(s : String) {})
+      state.raise_if_error! # should not raise
+    end
+
+    it "invokes on_chunk callback" do
+      chunks = [] of String
+      state = Fm::Session::StreamState.new(->(s : String) { chunks << s })
+      state.on_chunk.call("hello")
+      state.on_chunk.call(" world")
+      chunks.should eq ["hello", " world"]
+    end
+  end
 end

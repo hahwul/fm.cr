@@ -61,6 +61,21 @@ module Fm
       end
     end
 
+    # Returns the number of entries in the transcript.
+    def size : Int32
+      entries.size
+    end
+
+    # Returns `true` if the transcript has no entries.
+    def empty? : Bool
+      entries.empty?
+    end
+
+    # Yields each transcript entry to the block.
+    def each(& : JSON::Any ->) : Nil
+      entries.each { |entry| yield entry }
+    end
+
     # Serializes the transcript to a JSON string.
     def to_json : String
       @json

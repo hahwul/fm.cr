@@ -310,30 +310,6 @@ module Fm
       state.raise_if_error!
     end
 
-    # :nodoc:
-    protected def self.error_from_stream(code : Int32, message : String) : Error
-      error_code = GenerationErrorCode.from_value?(code)
-      return GenerationError.new(message) unless error_code
-
-      case error_code
-      in .cancelled?                        then GenerationError.new("Operation cancelled")
-      in .tool_call?                        then ToolCallError.new("unknown", message)
-      in .timeout?                          then TimeoutError.new(message)
-      in .exceeded_context_window_size?     then ExceededContextWindowSizeError.new(message)
-      in .assets_unavailable?               then AssetsUnavailableError.new(message)
-      in .guardrail_violation?              then GuardrailViolationError.new(message)
-      in .unsupported_guide?                then UnsupportedGuideError.new(message)
-      in .unsupported_language_or_locale?   then UnsupportedLanguageOrLocaleError.new(message)
-      in .decoding_failure?                 then DecodingFailureError.new(message)
-      in .rate_limited?                     then RateLimitedError.new(message)
-      in .concurrent_requests?              then ConcurrentRequestsError.new(message)
-      in .refusal?                          then RefusalError.new(message)
-      in .invalid_generation_schema?        then InvalidGenerationSchemaError.new(message)
-      in .unknown?, .model_not_available?,
-         .generation?, .invalid_input?      then GenerationError.new(message)
-      end
-    end
-
     def finalize
       unless @ptr.null?
         LibFmFfi.fm_session_free(@ptr)
@@ -401,7 +377,7 @@ module Fm
       # Raises the appropriate error if one was recorded during streaming.
       def raise_if_error! : Nil
         if err = @error
-          raise Session.error_from_stream(@error_code, err)
+          raise Fm.error_from_stream(@error_code, err)
         end
       end
     end
