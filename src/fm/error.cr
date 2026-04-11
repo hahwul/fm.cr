@@ -2,8 +2,8 @@ module Fm
   # Error codes returned by the Swift FFI layer.
   #
   # These map directly to the integer codes from `ffi.swift` and are used
-  # by `error_from_swift` / `Session.error_from_stream` to convert raw
-  # codes into typed Crystal exceptions.
+  # by `error_from_swift` / `error_from_stream` to convert raw codes into
+  # typed Crystal exceptions.
   enum GenerationErrorCode
     Unknown                    =  0
     ModelNotAvailable          =  1
@@ -59,6 +59,10 @@ module Fm
 
   # Error during generation.
   class GenerationError < Error
+  end
+
+  # The operation was cancelled by the caller.
+  class CancelledError < Error
   end
 
   # The input exceeded the model's context window size.
@@ -152,7 +156,7 @@ module Fm
     in .unknown?                           then InternalError.new(message)
     in .model_not_available?              then ModelNotAvailableError.new(message)
     in .generation?                       then GenerationError.new(message)
-    in .cancelled?                        then GenerationError.new("Operation cancelled")
+    in .cancelled?                        then CancelledError.new("Operation cancelled")
     in .tool_call?
       ToolCallError.new(
         tool_name: tool_name || "unknown",
@@ -179,6 +183,37 @@ module Fm
   def self.check_error!(error_ptr : Void*) : Nil
     unless error_ptr.null?
       raise error_from_swift(error_ptr)
+    end
+  end
+
+  # :nodoc:
+  # Converts a streaming error code and message to a typed Crystal exception.
+  #
+  # Unlike `error_from_swift`, streaming errors only provide a code and
+  # message string — there is no FFI error pointer to extract tool context
+  # from.
+  def self.error_from_stream(code : Int32, message : String) : Error
+    error_code = GenerationErrorCode.from_value?(code)
+    return GenerationError.new(message) unless error_code
+
+    case error_code
+    in .unknown?                          then InternalError.new(message)
+    in .model_not_available?              then ModelNotAvailableError.new(message)
+    in .generation?                       then GenerationError.new(message)
+    in .cancelled?                        then CancelledError.new("Operation cancelled")
+    in .tool_call?                        then ToolCallError.new("unknown", message)
+    in .invalid_input?                    then InvalidInputError.new(message)
+    in .timeout?                          then TimeoutError.new(message)
+    in .exceeded_context_window_size?     then ExceededContextWindowSizeError.new(message)
+    in .assets_unavailable?               then AssetsUnavailableError.new(message)
+    in .guardrail_violation?              then GuardrailViolationError.new(message)
+    in .unsupported_guide?                then UnsupportedGuideError.new(message)
+    in .unsupported_language_or_locale?   then UnsupportedLanguageOrLocaleError.new(message)
+    in .decoding_failure?                 then DecodingFailureError.new(message)
+    in .rate_limited?                     then RateLimitedError.new(message)
+    in .concurrent_requests?              then ConcurrentRequestsError.new(message)
+    in .refusal?                          then RefusalError.new(message)
+    in .invalid_generation_schema?        then InvalidGenerationSchemaError.new(message)
     end
   end
 

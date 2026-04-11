@@ -7,6 +7,11 @@ module Fm
     def initialize(@content : String)
     end
 
+    # Returns `true` if the response content is empty.
+    def empty? : Bool
+      @content.empty?
+    end
+
     def to_s(io : IO) : Nil
       io << @content
     end

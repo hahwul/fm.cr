@@ -98,7 +98,14 @@ module Fm
     value = JSON.parse(transcript_json)
     lines = [] of String
     collect_transcript_lines(value, lines)
-    lines.empty? ? transcript_json : lines.join("\n")
+    return transcript_json if lines.empty?
+
+    String.build do |io|
+      lines.each_with_index do |line, i|
+        io << '\n' if i > 0
+        io << line
+      end
+    end
   end
 
   # Configuration for transcript compaction.
