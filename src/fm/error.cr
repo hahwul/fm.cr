@@ -5,23 +5,23 @@ module Fm
   # by `error_from_swift` / `error_from_stream` to convert raw codes into
   # typed Crystal exceptions.
   enum GenerationErrorCode
-    Unknown                    =  0
-    ModelNotAvailable          =  1
-    Generation                 =  2
-    Cancelled                  =  3
-    ToolCall                   =  4
-    InvalidInput               =  5
-    Timeout                    =  6
-    ExceededContextWindowSize  =  7
-    AssetsUnavailable          =  8
-    GuardrailViolation         =  9
-    UnsupportedGuide           = 10
+    Unknown                     =  0
+    ModelNotAvailable           =  1
+    Generation                  =  2
+    Cancelled                   =  3
+    ToolCall                    =  4
+    InvalidInput                =  5
+    Timeout                     =  6
+    ExceededContextWindowSize   =  7
+    AssetsUnavailable           =  8
+    GuardrailViolation          =  9
+    UnsupportedGuide            = 10
     UnsupportedLanguageOrLocale = 11
-    DecodingFailure            = 12
-    RateLimited                = 13
-    ConcurrentRequests         = 14
-    Refusal                    = 15
-    InvalidGenerationSchema    = 16
+    DecodingFailure             = 12
+    RateLimited                 = 13
+    ConcurrentRequests          = 14
+    Refusal                     = 15
+    InvalidGenerationSchema     = 16
   end
 
   # Base error class for all FoundationModels errors.
@@ -153,28 +153,28 @@ module Fm
     return InternalError.new(message) unless error_code
 
     case error_code
-    in .unknown?                           then InternalError.new(message)
-    in .model_not_available?              then ModelNotAvailableError.new(message)
-    in .generation?                       then GenerationError.new(message)
-    in .cancelled?                        then CancelledError.new("Operation cancelled")
+    in .unknown?             then InternalError.new(message)
+    in .model_not_available? then ModelNotAvailableError.new(message)
+    in .generation?          then GenerationError.new(message)
+    in .cancelled?           then CancelledError.new("Operation cancelled")
     in .tool_call?
       ToolCallError.new(
         tool_name: tool_name || "unknown",
         message: message,
         arguments_json: tool_args
       )
-    in .invalid_input?                    then InvalidInputError.new(message)
-    in .timeout?                          then TimeoutError.new(message)
-    in .exceeded_context_window_size?     then ExceededContextWindowSizeError.new(message)
-    in .assets_unavailable?               then AssetsUnavailableError.new(message)
-    in .guardrail_violation?              then GuardrailViolationError.new(message)
-    in .unsupported_guide?                then UnsupportedGuideError.new(message)
-    in .unsupported_language_or_locale?   then UnsupportedLanguageOrLocaleError.new(message)
-    in .decoding_failure?                 then DecodingFailureError.new(message)
-    in .rate_limited?                     then RateLimitedError.new(message)
-    in .concurrent_requests?              then ConcurrentRequestsError.new(message)
-    in .refusal?                          then RefusalError.new(message)
-    in .invalid_generation_schema?        then InvalidGenerationSchemaError.new(message)
+    in .invalid_input?                  then InvalidInputError.new(message)
+    in .timeout?                        then TimeoutError.new(message)
+    in .exceeded_context_window_size?   then ExceededContextWindowSizeError.new(message)
+    in .assets_unavailable?             then AssetsUnavailableError.new(message)
+    in .guardrail_violation?            then GuardrailViolationError.new(message)
+    in .unsupported_guide?              then UnsupportedGuideError.new(message)
+    in .unsupported_language_or_locale? then UnsupportedLanguageOrLocaleError.new(message)
+    in .decoding_failure?               then DecodingFailureError.new(message)
+    in .rate_limited?                   then RateLimitedError.new(message)
+    in .concurrent_requests?            then ConcurrentRequestsError.new(message)
+    in .refusal?                        then RefusalError.new(message)
+    in .invalid_generation_schema?      then InvalidGenerationSchemaError.new(message)
     end
   end
 
@@ -197,23 +197,23 @@ module Fm
     return GenerationError.new(message) unless error_code
 
     case error_code
-    in .unknown?                          then InternalError.new(message)
-    in .model_not_available?              then ModelNotAvailableError.new(message)
-    in .generation?                       then GenerationError.new(message)
-    in .cancelled?                        then CancelledError.new("Operation cancelled")
-    in .tool_call?                        then ToolCallError.new("unknown", message)
-    in .invalid_input?                    then InvalidInputError.new(message)
-    in .timeout?                          then TimeoutError.new(message)
-    in .exceeded_context_window_size?     then ExceededContextWindowSizeError.new(message)
-    in .assets_unavailable?               then AssetsUnavailableError.new(message)
-    in .guardrail_violation?              then GuardrailViolationError.new(message)
-    in .unsupported_guide?                then UnsupportedGuideError.new(message)
-    in .unsupported_language_or_locale?   then UnsupportedLanguageOrLocaleError.new(message)
-    in .decoding_failure?                 then DecodingFailureError.new(message)
-    in .rate_limited?                     then RateLimitedError.new(message)
-    in .concurrent_requests?              then ConcurrentRequestsError.new(message)
-    in .refusal?                          then RefusalError.new(message)
-    in .invalid_generation_schema?        then InvalidGenerationSchemaError.new(message)
+    in .unknown?                        then InternalError.new(message)
+    in .model_not_available?            then ModelNotAvailableError.new(message)
+    in .generation?                     then GenerationError.new(message)
+    in .cancelled?                      then CancelledError.new("Operation cancelled")
+    in .tool_call?                      then ToolCallError.new("unknown", message)
+    in .invalid_input?                  then InvalidInputError.new(message)
+    in .timeout?                        then TimeoutError.new(message)
+    in .exceeded_context_window_size?   then ExceededContextWindowSizeError.new(message)
+    in .assets_unavailable?             then AssetsUnavailableError.new(message)
+    in .guardrail_violation?            then GuardrailViolationError.new(message)
+    in .unsupported_guide?              then UnsupportedGuideError.new(message)
+    in .unsupported_language_or_locale? then UnsupportedLanguageOrLocaleError.new(message)
+    in .decoding_failure?               then DecodingFailureError.new(message)
+    in .rate_limited?                   then RateLimitedError.new(message)
+    in .concurrent_requests?            then ConcurrentRequestsError.new(message)
+    in .refusal?                        then RefusalError.new(message)
+    in .invalid_generation_schema?      then InvalidGenerationSchemaError.new(message)
     end
   end
 
