@@ -1,0 +1,22 @@
+Lint/UselessAssign:
+  Excluded:
+    - spec/**/*.cr
+
+Lint/NotNil:
+  Excluded:
+    - spec/**/*.cr
+
+Style/MultilineStringLiteral:
+  Excluded:
+    - spec/**/*.cr
+
+Metrics/CyclomaticComplexity:
+  MaxComplexity: 20
+
+Naming/BlockParameterName:
+  MinNameLength: 1
+  AllowNamesEndingInNumbers: true
+
+# Public API uses `result.success` / `obj.active` form, not `?` predicates.
+Naming/QueryBoolMethods:
+  Enabled: false
