@@ -758,7 +758,7 @@ describe Fm do
       val = props["value"]
       one_of = val["oneOf"].as_a
       one_of.size.should eq 2
-      types = one_of.map { |s| s["type"].as_s }
+      types = one_of.map(&.["type"].as_s)
       types.should contain("string")
       types.should contain("integer")
     end
@@ -1338,7 +1338,7 @@ describe Fm do
     end
 
     it "records error" do
-      state = Fm::Session::StreamState.new(->(s : String) { })
+      state = Fm::Session::StreamState.new(->(_s : String) { })
       state.error = "something failed"
       state.error_code = 6
       state.error.should eq "something failed"
@@ -1346,7 +1346,7 @@ describe Fm do
     end
 
     it "raises recorded error" do
-      state = Fm::Session::StreamState.new(->(s : String) { })
+      state = Fm::Session::StreamState.new(->(_s : String) { })
       state.error = "timed out"
       state.error_code = Fm::GenerationErrorCode::Timeout.value
       expect_raises(Fm::TimeoutError) do
@@ -1355,7 +1355,7 @@ describe Fm do
     end
 
     it "does not raise when no error" do
-      state = Fm::Session::StreamState.new(->(s : String) { })
+      state = Fm::Session::StreamState.new(->(_s : String) { })
       state.raise_if_error! # should not raise
     end
 

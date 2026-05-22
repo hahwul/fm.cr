@@ -383,18 +383,18 @@ module Fm
     end
 
     # :nodoc:
-    protected def self.on_chunk(user_data : Void*, chunk : LibC::Char*) : Void
+    protected def self.on_chunk(user_data : Void*, chunk : LibC::Char*) : Nil
       return if user_data.null? || chunk.null?
       state = Box(StreamState).unbox(user_data)
       state.on_chunk.call(String.new(chunk))
     end
 
     # :nodoc:
-    protected def self.on_done(user_data : Void*) : Void
+    protected def self.on_done(user_data : Void*) : Nil
     end
 
     # :nodoc:
-    protected def self.on_error(user_data : Void*, code : Int32, message : LibC::Char*) : Void
+    protected def self.on_error(user_data : Void*, code : Int32, message : LibC::Char*) : Nil
       return if user_data.null?
       state = Box(StreamState).unbox(user_data)
       msg = message.null? ? "Streaming error (no message)" : String.new(message)

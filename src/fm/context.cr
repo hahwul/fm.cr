@@ -168,7 +168,7 @@ module Fm
   ) : CompactedSession?
     transcript_json = session.transcript_json
     usage = context_usage_from_transcript(transcript_json, limit)
-    return nil unless usage.over_limit?
+    return unless usage.over_limit?
 
     summary = compact_transcript(model, transcript_json, config)
     compacted = session_from_summary(model, base_instructions, summary)
