@@ -1,5 +1,11 @@
 require "../src/fm"
 
+# DEPRECATED (since fm.cr v0.3.0)
+# `AdapterAsset` was removed in the macOS 26.2 SDK, so `Fm::Adapter` no longer
+# loads on macOS 26.2+. This example is kept for reference only — see
+# CHANGELOG.md and prefer `examples/basic.cr` / `examples/structured.cr` on
+# current macOS versions.
+
 model = Fm::SystemLanguageModel.new
 model.ensure_available!
 
