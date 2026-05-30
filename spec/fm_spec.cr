@@ -119,6 +119,14 @@ private struct TestWithDefault
   getter label : String = "default"
 end
 
+private struct TestWithUnsupportedType
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter name : String
+  getter created_at : Time
+end
+
 private class TestTool < Fm::Tool
   def name : String
     "testTool"
@@ -569,6 +577,13 @@ describe Fm do
     end
   end
 
+  describe "SystemLanguageModel::TOKEN_USAGE_UNAVAILABLE" do
+    it "is the documented -2 sentinel as Int64" do
+      Fm::SystemLanguageModel::TOKEN_USAGE_UNAVAILABLE.should eq(-2_i64)
+      Fm::SystemLanguageModel::TOKEN_USAGE_UNAVAILABLE.should be_a(Int64)
+    end
+  end
+
   describe Fm::Generable do
     it "generates JSON schema" do
       schema = TestPerson.json_schema
@@ -789,6 +804,14 @@ describe Fm do
       json_str = schema.to_json
       parsed = JSON.parse(json_str)
       parsed["type"].as_s.should eq "object"
+    end
+
+    it "raises UnsupportedSchemaTypeError for unsupported field types instead of silently defaulting to string" do
+      ex = expect_raises(Fm::UnsupportedSchemaTypeError) do
+        TestWithUnsupportedType.json_schema
+      end
+      ex.type_name.should contain("Time")
+      ex.message.not_nil!.should contain("Time")
     end
   end
 
@@ -1222,6 +1245,23 @@ describe Fm do
     it "falls back to GenerationError for unrecognized codes" do
       err = Fm.error_from_stream(9999, "unknown code")
       err.is_a?(Fm::GenerationError).should be_true
+    end
+
+    it "produces a ToolCallError with an 'unknown' tool name (no tool context on the stream path)" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::ToolCall.value, "tool failed")
+      err.is_a?(Fm::ToolCallError).should be_true
+      err.as(Fm::ToolCallError).tool_name.should eq("unknown")
+    end
+
+    it "shares its code mapping with the FFI-pointer path via exception_for" do
+      # Every known code maps to the same exception class through the shared
+      # helper that both error_from_swift and error_from_stream delegate to.
+      Fm::GenerationErrorCode.values.each do |code|
+        next if code.unknown? # Unknown-default differs between the two callers.
+        from_stream = Fm.error_from_stream(code.value, "msg")
+        from_helper = Fm.exception_for(code, "msg")
+        from_stream.class.should eq(from_helper.class)
+      end
     end
   end
 

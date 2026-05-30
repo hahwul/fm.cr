@@ -46,6 +46,11 @@ module Fm
   # )
   # ```
   class SystemLanguageModel
+    # Sentinel returned by the Swift `fm_model_token_usage_*` FFI functions when
+    # the underlying token-counting API is unavailable on the current OS (it
+    # requires macOS 26.4+ at runtime). Surfaced to callers as `nil`.
+    TOKEN_USAGE_UNAVAILABLE = -2_i64
+
     @ptr : Void*
 
     def initialize(*, use_case : UseCase = UseCase::General, guardrails : Guardrails = Guardrails::Default)
@@ -136,7 +141,7 @@ module Fm
 
       Fm.check_error!(error.value)
 
-      result == -2_i64 ? nil : result
+      result == TOKEN_USAGE_UNAVAILABLE ? nil : result
     end
 
     # Returns the token usage for instructions and tools configuration.
@@ -163,7 +168,7 @@ module Fm
 
       Fm.check_error!(error.value)
 
-      result == -2_i64 ? nil : result
+      result == TOKEN_USAGE_UNAVAILABLE ? nil : result
     end
 
     def finalize

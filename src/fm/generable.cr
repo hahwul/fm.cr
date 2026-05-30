@@ -163,7 +163,12 @@ module Fm
       {% elsif T.class.has_method?(:json_schema) %}
         T.json_schema
       {% else %}
-        JSON::Any.new({"type" => JSON::Any.new("string")} of String => JSON::Any)
+        # No JSON Schema mapping for this Crystal type. Previously this silently
+        # fell back to `{"type":"string"}`, producing a schema that mismatched
+        # the struct (e.g. for `Time`) and could make structured generation
+        # decode against the wrong shape. Fail loudly instead so the mismatch is
+        # caught at the call site rather than corrupting output.
+        raise Fm::UnsupportedSchemaTypeError.new({{ T.stringify }})
       {% end %}
     end
   end
