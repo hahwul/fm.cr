@@ -114,6 +114,13 @@ module Fm
 
       error = Fm.make_error_ptr
 
+      # Safety contract: `fm_session_from_transcript` is a *synchronous* FFI
+      # call. Swift parses/copies the `tools_json` C string before returning,
+      # so the buffer only needs to stay alive for the duration of this call.
+      # `tools_json` is a local with no use after the call, so we explicitly
+      # reference it below (`tools_json.try(&.size)`) to keep the String — and
+      # thus the C buffer behind `tools_json_ptr` — reachable across the call,
+      # guarding against a use-after-free should Swift ever briefly retain it.
       ptr = LibFmFfi.fm_session_from_transcript(
         model.to_unsafe,
         transcript_json.to_unsafe,
@@ -125,6 +132,10 @@ module Fm
         ->Session.tool_callback(Void*, LibC::Char*, LibC::Char*),
         error
       )
+
+      # Keep `tools_json` reachable until the FFI call has fully returned (see
+      # the safety contract above). Cheap and side-effect free.
+      tools_json.try(&.size)
 
       Fm.check_error!(error.value)
 
