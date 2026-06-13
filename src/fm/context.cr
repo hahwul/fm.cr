@@ -94,8 +94,16 @@ module Fm
   end
 
   # Extracts readable text from transcript JSON.
+  #
+  # Returns the raw `transcript_json` unchanged if it cannot be parsed,
+  # so token estimation and compaction degrade gracefully on malformed
+  # input rather than raising.
   def self.transcript_to_text(transcript_json : String) : String
-    value = JSON.parse(transcript_json)
+    value = begin
+      JSON.parse(transcript_json)
+    rescue JSON::ParseException
+      return transcript_json
+    end
     lines = [] of String
     collect_transcript_lines(value, lines)
     return transcript_json if lines.empty?

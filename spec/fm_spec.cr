@@ -957,6 +957,27 @@ describe Fm do
       Fm.estimate_tokens("hello", 1).should eq 5
     end
 
+    # Regression: malformed transcript JSON must not raise; the raw
+    # string is returned and downstream estimators degrade gracefully.
+    it "transcript_to_text returns raw json for malformed input" do
+      malformed = "not json{ broken"
+      Fm.transcript_to_text(malformed).should eq malformed
+    end
+
+    it "context_usage_from_transcript does not raise on malformed JSON" do
+      limit = Fm::ContextLimit.new(max_tokens: 100, reserved_response_tokens: 10, chars_per_token: 4)
+      usage = Fm.context_usage_from_transcript("not json{ broken", limit)
+      usage.max_tokens.should eq 100
+      usage.estimated_tokens.should be >= 0
+    end
+
+    it "context_usage_from_transcript accepts a malformed Transcript without raising" do
+      limit = Fm::ContextLimit.new(max_tokens: 100, reserved_response_tokens: 10, chars_per_token: 4)
+      transcript = Fm::Transcript.new("not json{ broken")
+      usage = Fm.context_usage_from_transcript(transcript, limit)
+      usage.max_tokens.should eq 100
+    end
+
     it "estimate_tokens with large chars_per_token" do
       Fm.estimate_tokens("hello", 100).should eq 1
     end
@@ -1358,6 +1379,45 @@ describe Fm do
 
     it "creates from_json" do
       transcript = Fm::Transcript.from_json(%({"transcript":{"entries":[]}}))
+      transcript.entries.should be_empty
+    end
+
+    # Regression: malformed JSON must not raise; to_any degrades to a
+    # null JSON::Any and the value is cached for subsequent calls.
+    it "returns null JSON::Any for malformed JSON without raising" do
+      transcript = Fm::Transcript.new("not json{")
+      first = transcript.to_any
+      first.raw.should be_nil
+      transcript.to_any.should eq first # cached value is reused
+    end
+
+    # Regression: accessors must degrade to empty on malformed JSON
+    # rather than raising.
+    it "degrades to empty entries for malformed JSON" do
+      transcript = Fm::Transcript.new("not json{")
+      transcript.entries.should be_empty
+      transcript.size.should eq 0
+      transcript.empty?.should be_true
+      transcript.each { |_| raise "should not yield" }
+    end
+
+    # Regression: a non-array "entries" field returns [] instead of
+    # raising a TypeCastError.
+    it "returns empty entries when entries field is not an array" do
+      transcript = Fm::Transcript.new(%({"transcript":{"entries":"oops"}}))
+      transcript.entries.should be_empty
+    end
+
+    # Regression: a non-hash "transcript" field returns [] instead of
+    # raising.
+    it "returns empty entries when transcript field is not an object" do
+      transcript = Fm::Transcript.new(%({"transcript":"oops"}))
+      transcript.entries.should be_empty
+    end
+
+    # Regression: a top-level JSON primitive returns [] instead of raising.
+    it "returns empty entries for a top-level JSON primitive" do
+      transcript = Fm::Transcript.new(%("just a string"))
       transcript.entries.should be_empty
     end
   end
