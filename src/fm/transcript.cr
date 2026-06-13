@@ -33,9 +33,16 @@ module Fm
     end
 
     # Parses the transcript JSON and returns it as `JSON::Any`.
-    # The result is cached for subsequent calls.
+    #
+    # Returns a null `JSON::Any` if the JSON is malformed, so dependent
+    # accessors such as `entries`/`size` degrade to empty rather than
+    # raising. The result is cached for subsequent calls.
     def to_any : JSON::Any
-      @parsed ||= JSON.parse(@json)
+      @parsed ||= begin
+        JSON.parse(@json)
+      rescue JSON::ParseException
+        JSON::Any.new(nil)
+      end
     end
 
     # Returns the transcript entries as an array.
@@ -48,13 +55,10 @@ module Fm
     # no entries. The result is cached for subsequent calls.
     def entries : Array(JSON::Any)
       @entries ||= begin
-        parsed = to_any
-        if transcript = parsed["transcript"]?
-          if entries = transcript["entries"]?
-            entries.as_a
-          else
-            [] of JSON::Any
-          end
+        root = to_any.as_h?
+        transcript = root.try(&.["transcript"]?).try(&.as_h?)
+        if entries = transcript.try(&.["entries"]?)
+          entries.as_a? || [] of JSON::Any
         else
           [] of JSON::Any
         end
