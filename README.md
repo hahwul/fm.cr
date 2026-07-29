@@ -264,7 +264,7 @@ end
 
 - **macOS 26+** (Tahoe)
 - **Xcode 26+** with FoundationModels.framework
-- **Crystal >= 1.19.1**
+- **Crystal >= 1.21.0**
 - **Swift toolchain** (included with Xcode)
 
 > **Important:** The active developer directory must point to the full Xcode installation, not Command Line Tools. See [FAQ](#faq) if you encounter build errors.

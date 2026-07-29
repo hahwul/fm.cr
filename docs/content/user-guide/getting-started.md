@@ -12,7 +12,7 @@ Before using fm.cr, ensure your environment meets these requirements:
 |-------------|---------|
 | macOS | 26+ (Tahoe) |
 | Xcode | 26+ with FoundationModels.framework |
-| Crystal | >= 1.19.1 |
+| Crystal | >= 1.21.0 |
 | Hardware | Apple Silicon (M1 or later) |
 
 Apple Intelligence must be enabled in **System Settings > Apple Intelligence & Siri**.
