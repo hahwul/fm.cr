@@ -91,6 +91,13 @@ private struct TestWithUnion
   getter value : String | Int32
 end
 
+private struct TestWithNilableUnion
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter value : String | Int32 | Nil
+end
+
 private struct TestWithAllInts
   include JSON::Serializable
   include Fm::Generable
@@ -776,6 +783,30 @@ describe Fm do
       types = one_of.map(&.["type"].as_s)
       types.should contain("string")
       types.should contain("integer")
+    end
+
+    # Regression: a nilable union kept only its first non-nil variant, so
+    # `String | Int32 | Nil` was described as a bare integer and the model
+    # was never allowed to return a string.
+    it "keeps every non-nil variant of a nilable union" do
+      schema = TestWithNilableUnion.json_schema
+      props = schema["properties"].as_h
+      one_of = props["value"]["oneOf"].as_a
+      types = one_of.map(&.["type"].as_s)
+      types.should contain("string")
+      types.should contain("integer")
+      one_of.size.should eq 2
+    end
+
+    it "excludes a nilable union from required" do
+      schema = TestWithNilableUnion.json_schema
+      schema["required"]?.should be_nil
+    end
+
+    it "still describes a single-variant nilable type by its non-nil shape" do
+      props = TestWithOptional.json_schema["properties"].as_h
+      props["nickname"]["type"].as_s.should eq "string"
+      props["nickname"]["oneOf"]?.should be_nil
     end
 
     it "generates integer schema for all integer types" do

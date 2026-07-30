@@ -126,8 +126,23 @@ module Fm
       {% elsif T == Bool %}
         JSON::Any.new({"type" => JSON::Any.new("boolean")} of String => JSON::Any)
       {% elsif T.nilable? %}
-        {% non_nil = T.union_types.reject { |t| t == ::Nil }.first %}
-        Fm::Generable.type_to_schema({{ non_nil }})
+        # Nilable types describe only their non-nil shape; nilability is
+        # expressed by omitting the property from `required`.
+        {% non_nils = T.union_types.reject { |t| t == ::Nil } %}
+        {% if non_nils.empty? %}
+          JSON::Any.new({"type" => JSON::Any.new("null")} of String => JSON::Any)
+        {% elsif non_nils.size == 1 %}
+          Fm::Generable.type_to_schema({{ non_nils.first }})
+        {% else %}
+          # A nilable union of several types (e.g. `String | Int32 | Nil`) still
+          # has to describe every non-nil variant. Previously only the first was
+          # emitted, producing a schema that rejected the other variants.
+          one_of = [] of JSON::Any
+          {% for vt in non_nils %}
+            one_of << Fm::Generable.type_to_schema({{ vt }})
+          {% end %}
+          JSON::Any.new({"oneOf" => JSON::Any.new(one_of)} of String => JSON::Any)
+        {% end %}
       {% elsif T.union? %}
         # Non-nil union types → JSON Schema "oneOf"
         {% variants = T.union_types %}
