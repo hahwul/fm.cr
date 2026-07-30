@@ -84,6 +84,20 @@ private enum TestColor
   Blue
 end
 
+@[Flags]
+private enum TestPermission
+  Read
+  Write
+  Execute
+end
+
+private struct TestWithFlagsEnum
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter permissions : TestPermission
+end
+
 private struct TestWithHash
   include JSON::Serializable
   include Fm::Generable
@@ -808,6 +822,34 @@ describe Fm do
       color["type"].as_s.should eq "string"
       values = color["enum"].as_a.map(&.as_s)
       values.should eq ["red", "green", "blue"]
+    end
+
+    # Regression: a `@[Flags]` enum was described as a plain string enum even
+    # though `JSON::Serializable` reads and writes it as an array of member
+    # names, so structured generation could never decode the model's output.
+    # The synthesized `None`/`All` members were advertised as values too.
+    it "generates an array schema for a Flags enum" do
+      props = TestWithFlagsEnum.json_schema["properties"].as_h
+      perms = props["permissions"]
+      perms["type"].as_s.should eq "array"
+      values = perms["items"]["enum"].as_a.map(&.as_s)
+      values.should eq ["read", "write", "execute"]
+    end
+
+    it "omits the synthesized None/All members of a Flags enum" do
+      props = TestWithFlagsEnum.json_schema["properties"].as_h
+      values = props["permissions"]["items"]["enum"].as_a.map(&.as_s)
+      values.should_not contain("none")
+      values.should_not contain("all")
+    end
+
+    it "generates a Flags enum schema that matches its JSON serialization" do
+      props = TestWithFlagsEnum.json_schema["properties"].as_h
+      serialized = JSON.parse((TestPermission::Read | TestPermission::Write).to_json)
+      serialized.as_a.map(&.as_s).should eq ["read", "write"]
+      props["permissions"]["type"].as_s.should eq "array"
+      allowed = props["permissions"]["items"]["enum"].as_a.map(&.as_s)
+      serialized.as_a.each { |v| allowed.should contain(v.as_s) }
     end
 
     it "generates Union schema with oneOf" do

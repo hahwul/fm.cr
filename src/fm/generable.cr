@@ -166,16 +166,31 @@ module Fm
         {% end %}
         JSON::Any.new({"oneOf" => JSON::Any.new(one_of)} of String => JSON::Any)
       {% elsif T < Enum %}
-        # Enum types → JSON Schema "enum" with member names (snake_case)
-        {% members = T.constants %}
+        # Enum types → JSON Schema "enum" with member names (snake_case).
+        #
+        # `@[Flags]` enums serialize as an *array* of member names, and Crystal
+        # synthesizes `None`/`All` members that are not real values, so they
+        # need a different shape from a plain enum.
+        {% flags = T.annotation(::Flags) %}
+        {% members = T.constants.reject { |m| flags && (m == "None".id || m == "All".id) } %}
         enum_values = [] of JSON::Any
         {% for m in members %}
           enum_values << JSON::Any.new({{ m.underscore.stringify }})
         {% end %}
-        JSON::Any.new({
-          "type" => JSON::Any.new("string"),
-          "enum" => JSON::Any.new(enum_values),
-        } of String => JSON::Any)
+        {% if flags %}
+          JSON::Any.new({
+            "type"  => JSON::Any.new("array"),
+            "items" => JSON::Any.new({
+              "type" => JSON::Any.new("string"),
+              "enum" => JSON::Any.new(enum_values),
+            } of String => JSON::Any),
+          } of String => JSON::Any)
+        {% else %}
+          JSON::Any.new({
+            "type" => JSON::Any.new("string"),
+            "enum" => JSON::Any.new(enum_values),
+          } of String => JSON::Any)
+        {% end %}
       {% elsif T < Array %}
         items = Fm::Generable.type_to_schema({{ T.type_vars[0] }})
         JSON::Any.new({
