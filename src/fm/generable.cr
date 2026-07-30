@@ -69,27 +69,27 @@ module Fm
                 _h["const"] = JSON::Any.new(\{{guide[:constant]}})
               \{% end %}
 
-              \{% if guide[:minimum] %}
-                _h["minimum"] = JSON::Any.new(\{{guide[:minimum]}}.to_i64)
+              \{% if guide[:minimum] != nil %}
+                _h["minimum"] = Fm::Generable.number_to_json(\{{guide[:minimum]}})
               \{% end %}
 
-              \{% if guide[:maximum] %}
-                _h["maximum"] = JSON::Any.new(\{{guide[:maximum]}}.to_i64)
+              \{% if guide[:maximum] != nil %}
+                _h["maximum"] = Fm::Generable.number_to_json(\{{guide[:maximum]}})
               \{% end %}
 
               \{% if guide[:pattern] %}
                 _h["pattern"] = JSON::Any.new(\{{guide[:pattern]}})
               \{% end %}
 
-              \{% if guide[:min_items] %}
+              \{% if guide[:min_items] != nil %}
                 _h["minItems"] = JSON::Any.new(\{{guide[:min_items]}}.to_i64)
               \{% end %}
 
-              \{% if guide[:max_items] %}
+              \{% if guide[:max_items] != nil %}
                 _h["maxItems"] = JSON::Any.new(\{{guide[:max_items]}}.to_i64)
               \{% end %}
 
-              \{% if guide[:count] %}
+              \{% if guide[:count] != nil %}
                 _h["minItems"] = JSON::Any.new(\{{guide[:count]}}.to_i64)
                 _h["maxItems"] = JSON::Any.new(\{{guide[:count]}}.to_i64)
               \{% end %}
@@ -113,6 +113,20 @@ module Fm
 
         JSON::Any.new(schema)
       end
+    end
+
+    # :nodoc:
+    # Wraps a `Fm::Guide` numeric bound as `JSON::Any` without changing its
+    # kind. Integer bounds stay integers; fractional bounds stay fractional
+    # (truncating `minimum: 0.5` to `0` would widen the constraint, and
+    # `maximum: 9.5` to `9` would reject values the struct accepts).
+    def self.number_to_json(value : Int) : JSON::Any
+      JSON::Any.new(value.to_i64)
+    end
+
+    # :ditto:
+    def self.number_to_json(value : Float) : JSON::Any
+      JSON::Any.new(value.to_f64)
     end
 
     # Maps Crystal types to JSON Schema type descriptors.

@@ -64,6 +64,20 @@ private struct TestWithGuide
   getter year : Int32
 end
 
+private struct TestWithFloatGuide
+  include JSON::Serializable
+  include Fm::Generable
+
+  @[Fm::Guide(minimum: 0.5, maximum: 9.5)]
+  getter score : Float64
+
+  @[Fm::Guide(minimum: 0, maximum: 0)]
+  getter zero : Int32
+
+  @[Fm::Guide(min_items: 0, max_items: 0)]
+  getter nothing : Array(String)
+end
+
 private enum TestColor
   Red
   Green
@@ -650,6 +664,28 @@ describe Fm do
       props = schema["properties"].as_h
       props["score"]["minimum"].as_i.should eq 0
       props["score"]["maximum"].as_i.should eq 10
+    end
+
+    # Regression: numeric bounds were funnelled through `.to_i64`, so
+    # `minimum: 0.5` became `0` (a wider bound than asked for) and
+    # `maximum: 9.5` became `9` (rejecting values the struct accepts).
+    it "preserves fractional Guide minimum/maximum constraints" do
+      props = TestWithFloatGuide.json_schema["properties"].as_h
+      props["score"]["minimum"].as_f.should eq 0.5
+      props["score"]["maximum"].as_f.should eq 9.5
+    end
+
+    it "keeps integral Guide bounds as integers" do
+      props = TestWithFloatGuide.json_schema["properties"].as_h
+      props["zero"]["minimum"].raw.should be_a(Int64)
+      props["zero"]["minimum"].as_i.should eq 0
+      props["zero"]["maximum"].as_i.should eq 0
+    end
+
+    it "emits zero-valued Guide item counts" do
+      props = TestWithFloatGuide.json_schema["properties"].as_h
+      props["nothing"]["minItems"].as_i.should eq 0
+      props["nothing"]["maxItems"].as_i.should eq 0
     end
 
     it "applies Guide pattern constraint" do
