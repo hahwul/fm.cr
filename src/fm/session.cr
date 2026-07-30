@@ -208,7 +208,7 @@ module Fm
     # end
     # ```
     def stream(prompt : String, options : GenerationOptions = GenerationOptions.default, &block : String ->) : Nil
-      state = StreamState.new(block)
+      state = StreamState.new(block, @ptr)
       boxed = Box(StreamState).box(state)
 
       LibFmFfi.fm_session_stream(
@@ -308,7 +308,7 @@ module Fm
 
     # Streams a structured JSON response matching a schema.
     def stream_json(prompt : String, schema_json : String, options : GenerationOptions = GenerationOptions.default, &block : String ->) : Nil
-      state = StreamState.new(block)
+      state = StreamState.new(block, @ptr)
       boxed = Box(StreamState).box(state)
 
       LibFmFfi.fm_session_stream_json(
@@ -385,12 +385,44 @@ module Fm
       property error_code : Int32 = 0
       getter on_chunk : String ->
 
-      def initialize(@on_chunk : String ->)
+      # An exception raised by the caller's block. Stored as the original
+      # object so its class and backtrace survive being carried across the
+      # FFI boundary.
+      getter callback_error : Exception?
+
+      def initialize(@on_chunk : String ->, @session : Void* = Pointer(Void).null)
         @error = nil
       end
 
+      # Hands a chunk to the caller's block, keeping any exception it raises on
+      # this side of the FFI boundary.
+      #
+      # A Crystal exception must never unwind through the Swift frame that
+      # invoked this callback: that frame runs inside a `DispatchQueue.sync` on
+      # a detached task and owns the semaphore `fm_session_stream` is blocked
+      # on, so unwinding past it aborts the process (and would otherwise leave
+      # the FFI call waiting forever). Record the exception instead, stop
+      # delivering, and ask the session to cancel so the FFI call returns
+      # promptly; `#raise_if_error!` re-raises it to the caller afterwards.
+      def deliver(chunk : String) : Nil
+        return if @callback_error
+        begin
+          @on_chunk.call(chunk)
+        rescue ex
+          @callback_error = ex
+          LibFmFfi.fm_session_cancel(@session) unless @session.null?
+        end
+      end
+
       # Raises the appropriate error if one was recorded during streaming.
+      #
+      # An exception from the caller's own block takes precedence over the
+      # cancellation it triggered.
       def raise_if_error! : Nil
+        if ex = @callback_error
+          raise ex
+        end
+
         if err = @error
           raise Fm.error_from_stream(@error_code, err)
         end
@@ -401,7 +433,12 @@ module Fm
     protected def self.on_chunk(user_data : Void*, chunk : LibC::Char*) : Nil
       return if user_data.null? || chunk.null?
       state = Box(StreamState).unbox(user_data)
-      state.on_chunk.call(String.new(chunk))
+      state.deliver(String.new(chunk))
+    rescue
+      # Unreachable in practice (`deliver` handles block failures), but an
+      # exception escaping into the Swift caller aborts the process, so this
+      # callback must not raise under any circumstance.
+      nil
     end
 
     # :nodoc:
@@ -415,11 +452,26 @@ module Fm
       msg = message.null? ? "Streaming error (no message)" : String.new(message)
       state.error = msg
       state.error_code = code
+    rescue
+      # Must not raise into the Swift caller; see `on_chunk`.
+      nil
     end
 
     # -- Tool callback --
 
+    # A pre-serialized `ToolResult` for failures that happen while building the
+    # normal error payload. Used as the last resort in `tool_callback`, which
+    # must not raise and must not risk raising a second time.
+    private TOOL_DISPATCH_FAILED_JSON = %({"success":false,"error":"Tool dispatch failed"})
+
     # :nodoc:
+    # Dispatches a model tool call to the matching `Tool`.
+    #
+    # Invoked by Swift, so it must return a result for every input and must
+    # never let a Crystal exception unwind into its caller — doing so aborts
+    # the process rather than raising. Everything, not just `Tool#call`, runs
+    # inside the rescue: an overridden `Tool#name` or a `ToolResult`
+    # serialization failure can raise just as easily.
     protected def self.tool_callback(user_data : Void*, tool_name : LibC::Char*, arguments_json : LibC::Char*) : LibC::Char*
       if user_data.null? || tool_name.null?
         result = ToolResult.error("Invalid callback parameters")
@@ -445,6 +497,12 @@ module Fm
       end
 
       LibC.strdup(result.to_json)
+    rescue ex
+      begin
+        LibC.strdup(ToolResult.error("Tool dispatch failed: #{ex.message}").to_json)
+      rescue
+        LibC.strdup(TOOL_DISPATCH_FAILED_JSON)
+      end
     end
   end
 end

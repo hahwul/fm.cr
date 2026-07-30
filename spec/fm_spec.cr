@@ -1650,6 +1650,58 @@ describe Fm do
       state.raise_if_error! # should not raise
     end
 
+    # Regression: an exception raised by the caller's block used to unwind
+    # straight into the Swift frame that invoked the callback. That frame runs
+    # in a `DispatchQueue.sync` on a detached task and owns the semaphore the
+    # FFI call is blocked on, so the process aborted instead of the caller
+    # seeing an ordinary Crystal exception.
+    it "captures an exception raised by the caller's block" do
+      state = Fm::Session::StreamState.new(->(_s : String) { raise "block blew up" })
+      state.deliver("chunk")
+      state.callback_error.should_not be_nil
+      state.callback_error.not_nil!.message.should eq "block blew up"
+    end
+
+    it "re-raises the caller's exception with its original type" do
+      state = Fm::Session::StreamState.new(->(_s : String) { raise KeyError.new("missing") })
+      state.deliver("chunk")
+      expect_raises(KeyError, "missing") do
+        state.raise_if_error!
+      end
+    end
+
+    it "stops delivering chunks once the block has raised" do
+      seen = [] of String
+      state = Fm::Session::StreamState.new(->(s : String) {
+        seen << s
+        raise "stop" if s == "b"
+      })
+      state.deliver("a")
+      state.deliver("b")
+      state.deliver("c")
+      seen.should eq ["a", "b"]
+    end
+
+    it "prefers the block's exception over the cancellation it triggered" do
+      state = Fm::Session::StreamState.new(->(_s : String) { raise "from block" })
+      state.deliver("chunk")
+      state.error = "Cancelled"
+      state.error_code = Fm::GenerationErrorCode::Cancelled.value
+      ex = expect_raises(Exception) { state.raise_if_error! }
+      ex.message.should eq "from block"
+      ex.should_not be_a(Fm::CancelledError)
+    end
+
+    it "delivers normally when the block does not raise" do
+      seen = [] of String
+      state = Fm::Session::StreamState.new(->(s : String) { seen << s })
+      state.deliver("a")
+      state.deliver("b")
+      seen.should eq ["a", "b"]
+      state.callback_error.should be_nil
+      state.raise_if_error!
+    end
+
     it "invokes on_chunk callback" do
       chunks = [] of String
       state = Fm::Session::StreamState.new(->(s : String) { chunks << s })
