@@ -1062,6 +1062,52 @@ describe Fm do
       Fm.compacted_instructions("base", "  ").should eq "base"
     end
 
+    # Regression: `content` / `text` were skipped during the recursive walk
+    # whether or not this frame had consumed them as strings. FoundationModels
+    # nests message segments under those keys, so every nested segment's text
+    # was dropped — under-counting tokens and feeding compaction a transcript
+    # with the actual conversation missing.
+    it "extracts text nested under a content array" do
+      json = %({"transcript":{"entries":[{"role":"user","content":[{"text":"nested prompt"}]}]}})
+      text = Fm.transcript_to_text(json)
+      text.should contain("nested prompt")
+    end
+
+    it "extracts text nested under a text object" do
+      json = %({"summary":{"text":{"value":"nested value"}}})
+      Fm.transcript_to_text(json).should contain("nested value")
+    end
+
+    it "keeps sibling entries when one nests its content" do
+      json = %({"transcript":{"entries":[
+        {"role":"user","contents":[{"text":"flat entry"}]},
+        {"role":"assistant","content":[{"text":"nested entry"}]}
+      ]}})
+      text = Fm.transcript_to_text(json)
+      text.should contain("flat entry")
+      text.should contain("nested entry")
+    end
+
+    it "counts nested transcript text toward the token estimate" do
+      nested = %({"transcript":{"entries":[{"role":"user","content":[{"text":"#{"x" * 400}"}]}]}})
+      limit = Fm::ContextLimit.new(max_tokens: 100, reserved_response_tokens: 0, chars_per_token: 4)
+      usage = Fm.context_usage_from_transcript(nested, limit)
+      # 400 chars of payload at 4 chars/token ≈ 100 tokens; the raw-JSON
+      # fallback would have been counted instead had extraction found nothing.
+      usage.estimated_tokens.should be >= 100
+      Fm.transcript_to_text(nested).should_not contain("entries")
+    end
+
+    it "still prefers the role-prefixed form for string content" do
+      json = %([{"role":"user","content":"Hello"}])
+      Fm.transcript_to_text(json).should eq "user: Hello"
+    end
+
+    it "uses text as the role's content when content is absent" do
+      json = %([{"role":"user","text":"via text"}])
+      Fm.transcript_to_text(json).should eq "user: via text"
+    end
+
     it "estimate_tokens with single char per token" do
       Fm.estimate_tokens("hello", 1).should eq 5
     end
