@@ -1538,6 +1538,42 @@ describe Fm do
     end
   end
 
+  # Regression: `timeout.total_milliseconds.to_u64` truncated any
+  # sub-millisecond span to 0, which `Session#respond(timeout:)` treats as
+  # "no timeout" — so a deliberately tiny timeout silently became an
+  # unbounded wait — and raised a bare `OverflowError` for negative spans.
+  describe "Fm.timeout_to_ms" do
+    it "rounds a sub-millisecond timeout up instead of down to zero" do
+      Fm.timeout_to_ms(0.5.milliseconds).should eq 1_u64
+      Fm.timeout_to_ms(1.microsecond).should eq 1_u64
+      Fm.timeout_to_ms(1.nanosecond).should eq 1_u64
+    end
+
+    it "reserves zero for an explicitly zero timeout" do
+      Fm.timeout_to_ms(Time::Span.zero).should eq 0_u64
+    end
+
+    it "converts whole millisecond spans exactly" do
+      Fm.timeout_to_ms(1.millisecond).should eq 1_u64
+      Fm.timeout_to_ms(10.seconds).should eq 10_000_u64
+      Fm.timeout_to_ms(2.minutes).should eq 120_000_u64
+    end
+
+    it "rounds a fractional millisecond span up" do
+      Fm.timeout_to_ms(1500.microseconds).should eq 2_u64
+    end
+
+    it "raises ArgumentError for a negative timeout" do
+      expect_raises(ArgumentError, "timeout must not be negative") do
+        Fm.timeout_to_ms(-1.seconds)
+      end
+    end
+
+    it "saturates instead of overflowing for an absurdly large timeout" do
+      Fm.timeout_to_ms(Time::Span::MAX).should eq UInt64::MAX
+    end
+  end
+
   describe "StreamState" do
     it "starts without error" do
       chunks = [] of String

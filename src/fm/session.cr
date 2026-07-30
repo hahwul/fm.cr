@@ -173,8 +173,12 @@ module Fm
     end
 
     # Sends a prompt and waits for the response, with a timeout.
+    #
+    # A zero timeout means "no timeout" and delegates to `#respond`. Any other
+    # positive `timeout` is honoured, rounded up to the 1 ms resolution of the
+    # underlying FFI call. A negative `timeout` raises `ArgumentError`.
     def respond(prompt : String, options : GenerationOptions = GenerationOptions.default, *, timeout : Time::Span) : Response
-      timeout_ms = timeout.total_milliseconds.to_u64
+      timeout_ms = Fm.timeout_to_ms(timeout)
 
       if timeout_ms == 0
         return respond(prompt, options)
