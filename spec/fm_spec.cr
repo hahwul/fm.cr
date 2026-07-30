@@ -1829,6 +1829,34 @@ describe Fm do
       ex.should_not be_a(Fm::CancelledError)
     end
 
+    it "invokes the cancel hook once when the block raises" do
+      cancels = 0
+      state = Fm::Session::StreamState.new(
+        ->(_s : String) { raise "boom" },
+        -> { cancels += 1; nil }
+      )
+      state.deliver("a")
+      state.deliver("b")
+      cancels.should eq 1
+    end
+
+    it "does not cancel when the block succeeds" do
+      cancels = 0
+      state = Fm::Session::StreamState.new(->(_s : String) { }, -> { cancels += 1; nil })
+      state.deliver("a")
+      cancels.should eq 0
+    end
+
+    it "still reports the block's exception when cancelling fails" do
+      state = Fm::Session::StreamState.new(
+        ->(_s : String) { raise "original" },
+        -> { raise "cancel failed" }
+      )
+      state.deliver("a")
+      state.callback_error.not_nil!.message.should eq "original"
+      expect_raises(Exception, "original") { state.raise_if_error! }
+    end
+
     it "delivers normally when the block does not raise" do
       seen = [] of String
       state = Fm::Session::StreamState.new(->(s : String) { seen << s })

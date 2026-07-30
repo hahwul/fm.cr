@@ -208,7 +208,7 @@ module Fm
     # end
     # ```
     def stream(prompt : String, options : GenerationOptions = GenerationOptions.default, &block : String ->) : Nil
-      state = StreamState.new(block, @ptr)
+      state = StreamState.new(block, -> { cancel })
       boxed = Box(StreamState).box(state)
 
       LibFmFfi.fm_session_stream(
@@ -308,7 +308,7 @@ module Fm
 
     # Streams a structured JSON response matching a schema.
     def stream_json(prompt : String, schema_json : String, options : GenerationOptions = GenerationOptions.default, &block : String ->) : Nil
-      state = StreamState.new(block, @ptr)
+      state = StreamState.new(block, -> { cancel })
       boxed = Box(StreamState).box(state)
 
       LibFmFfi.fm_session_stream_json(
@@ -390,7 +390,15 @@ module Fm
       # FFI boundary.
       getter callback_error : Exception?
 
-      def initialize(@on_chunk : String ->, @session : Void* = Pointer(Void).null)
+      # `on_cancel` stops the in-flight stream after the caller's block raises.
+      #
+      # It is injected rather than calling `LibFmFfi.fm_session_cancel` here on
+      # purpose. Crystal only emits a `lib`'s link flags when one of its funs is
+      # reachable in the compiled program, and the spec suite is pure Crystal —
+      # it never reaches the FFI, so it links without `ext/libfm_ffi.a` being
+      # built. Naming an `fm_*` fun from a method the specs *do* exercise
+      # (`#deliver`) would drag the archive into every `crystal spec` link.
+      def initialize(@on_chunk : String ->, @on_cancel : Proc(Nil)? = nil)
         @error = nil
       end
 
@@ -410,7 +418,12 @@ module Fm
           @on_chunk.call(chunk)
         rescue ex
           @callback_error = ex
-          LibFmFfi.fm_session_cancel(@session) unless @session.null?
+          begin
+            @on_cancel.try &.call
+          rescue
+            # Cancellation is best effort; the caller's exception is what
+            # matters and must not be masked by a failure to cancel.
+          end
         end
       end
 
