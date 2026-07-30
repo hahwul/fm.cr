@@ -1169,6 +1169,60 @@ describe Fm do
       json.should contain(%("maximumResponseTokens":256))
     end
 
+    # Regression: a bare `seed` was serialized as a top-level `{"seed":N}` with
+    # no `sampling` object. The Swift decoder only reads a seed from inside
+    # `sampling`, so the seed was dropped and output stayed non-deterministic —
+    # exactly the opposite of what `GenerationOptions.new(seed:)` documents.
+    it "carries a bare seed inside a seeded sampling mode" do
+      opts = Fm::GenerationOptions.new(seed: 42_u64)
+      parsed = JSON.parse(opts.to_json)
+      sampling = parsed["sampling"]
+      sampling["mode"].as_s.should eq "random"
+      sampling["seed"].as_i.should eq 42
+      sampling["probabilityThreshold"].as_f.should eq 1.0
+    end
+
+    it "does not duplicate a bare seed at the top level" do
+      json = Fm::GenerationOptions.new(seed: 42_u64).to_json
+      json.scan(/"seed"/).size.should eq 1
+    end
+
+    it "gives a seed-only SamplingMode a mode the framework can seed" do
+      opts = Fm::GenerationOptions.new(sampling_mode: Fm::SamplingMode.random(seed: 7_u64))
+      sampling = JSON.parse(opts.to_json)["sampling"]
+      sampling["seed"].as_i.should eq 7
+      sampling["probabilityThreshold"].as_f.should eq 1.0
+    end
+
+    it "pairs a top-level seed with plain random sampling" do
+      opts = Fm::GenerationOptions.new(sampling: Fm::Sampling::Random, seed: 99_u64)
+      parsed = JSON.parse(opts.to_json)
+      parsed["sampling"]["probabilityThreshold"].as_f.should eq 1.0
+      parsed["seed"].as_i.should eq 99
+    end
+
+    it "leaves an unseeded sampling mode untruncated" do
+      parsed = JSON.parse(Fm::GenerationOptions.new(sampling: Fm::Sampling::Random).to_json)
+      parsed["sampling"]["mode"].as_s.should eq "random"
+      parsed["sampling"]["probabilityThreshold"]?.should be_nil
+      parsed["sampling"]["seed"]?.should be_nil
+    end
+
+    it "does not add a threshold to greedy sampling" do
+      opts = Fm::GenerationOptions.new(sampling: Fm::Sampling::Greedy, seed: 5_u64)
+      parsed = JSON.parse(opts.to_json)
+      parsed["sampling"]["mode"].as_s.should eq "greedy"
+      parsed["sampling"]["probabilityThreshold"]?.should be_nil
+    end
+
+    it "keeps an explicit top-k over the seed fallback" do
+      opts = Fm::GenerationOptions.new(sampling_mode: Fm::SamplingMode.random(top: 10, seed: 3_u64))
+      parsed = JSON.parse(opts.to_json)
+      parsed["sampling"]["top"].as_i.should eq 10
+      parsed["sampling"]["probabilityThreshold"]?.should be_nil
+      parsed["sampling"]["seed"].as_i.should eq 3
+    end
+
     it "effective_sampling_mode returns nil when nothing set" do
       opts = Fm::GenerationOptions.default
       opts.effective_sampling_mode.should be_nil
