@@ -64,10 +64,56 @@ private struct TestWithGuide
   getter year : Int32
 end
 
+private struct TestWithStackedGuides
+  include JSON::Serializable
+  include Fm::Generable
+
+  @[Fm::Guide(description: "Log level setting")]
+  @[Fm::Guide(any_of: ["debug", "info", "warn", "error"])]
+  getter log_level : String
+
+  @[Fm::Guide(minimum: 1)]
+  @[Fm::Guide(maximum: 10)]
+  @[Fm::Guide(description: "Priority")]
+  getter priority : Int32
+
+  @[Fm::Guide(minimum: 1)]
+  @[Fm::Guide(minimum: 5)]
+  getter last_wins : Int32
+end
+
+private struct TestWithFloatGuide
+  include JSON::Serializable
+  include Fm::Generable
+
+  @[Fm::Guide(minimum: 0.5, maximum: 9.5)]
+  getter score : Float64
+
+  @[Fm::Guide(minimum: 0, maximum: 0)]
+  getter zero : Int32
+
+  @[Fm::Guide(min_items: 0, max_items: 0)]
+  getter nothing : Array(String)
+end
+
 private enum TestColor
   Red
   Green
   Blue
+end
+
+@[Flags]
+private enum TestPermission
+  Read
+  Write
+  Execute
+end
+
+private struct TestWithFlagsEnum
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter permissions : TestPermission
 end
 
 private struct TestWithHash
@@ -89,6 +135,13 @@ private struct TestWithUnion
   include Fm::Generable
 
   getter value : String | Int32
+end
+
+private struct TestWithNilableUnion
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter value : String | Int32 | Nil
 end
 
 private struct TestWithAllInts
@@ -125,6 +178,13 @@ private struct TestWithUnsupportedType
 
   getter name : String
   getter created_at : Time
+end
+
+private struct TestSavedSession
+  include JSON::Serializable
+
+  getter label : String
+  getter transcript : Fm::Transcript
 end
 
 private class TestTool < Fm::Tool
@@ -645,6 +705,51 @@ describe Fm do
       props["score"]["maximum"].as_i.should eq 10
     end
 
+    # Regression: `ivar.annotation` returns only the last matching annotation,
+    # so stacking several `Fm::Guide`s — the pattern the docs demonstrate for
+    # combining a description with an `any_of` — silently discarded every
+    # annotation but the final one.
+    it "applies every stacked Guide annotation" do
+      props = TestWithStackedGuides.json_schema["properties"].as_h
+      level = props["log_level"]
+      level["description"].as_s.should eq "Log level setting"
+      level["enum"].as_a.map(&.as_s).should eq ["debug", "info", "warn", "error"]
+    end
+
+    it "merges constraints spread across three Guide annotations" do
+      priority = TestWithStackedGuides.json_schema["properties"].as_h["priority"]
+      priority["minimum"].as_i.should eq 1
+      priority["maximum"].as_i.should eq 10
+      priority["description"].as_s.should eq "Priority"
+    end
+
+    it "lets the last Guide win when two set the same option" do
+      props = TestWithStackedGuides.json_schema["properties"].as_h
+      props["last_wins"]["minimum"].as_i.should eq 5
+    end
+
+    # Regression: numeric bounds were funnelled through `.to_i64`, so
+    # `minimum: 0.5` became `0` (a wider bound than asked for) and
+    # `maximum: 9.5` became `9` (rejecting values the struct accepts).
+    it "preserves fractional Guide minimum/maximum constraints" do
+      props = TestWithFloatGuide.json_schema["properties"].as_h
+      props["score"]["minimum"].as_f.should eq 0.5
+      props["score"]["maximum"].as_f.should eq 9.5
+    end
+
+    it "keeps integral Guide bounds as integers" do
+      props = TestWithFloatGuide.json_schema["properties"].as_h
+      props["zero"]["minimum"].raw.should be_a(Int64)
+      props["zero"]["minimum"].as_i.should eq 0
+      props["zero"]["maximum"].as_i.should eq 0
+    end
+
+    it "emits zero-valued Guide item counts" do
+      props = TestWithFloatGuide.json_schema["properties"].as_h
+      props["nothing"]["minItems"].as_i.should eq 0
+      props["nothing"]["maxItems"].as_i.should eq 0
+    end
+
     it "applies Guide pattern constraint" do
       schema = TestWithGuide.json_schema
       props = schema["properties"].as_h
@@ -767,6 +872,34 @@ describe Fm do
       values.should eq ["red", "green", "blue"]
     end
 
+    # Regression: a `@[Flags]` enum was described as a plain string enum even
+    # though `JSON::Serializable` reads and writes it as an array of member
+    # names, so structured generation could never decode the model's output.
+    # The synthesized `None`/`All` members were advertised as values too.
+    it "generates an array schema for a Flags enum" do
+      props = TestWithFlagsEnum.json_schema["properties"].as_h
+      perms = props["permissions"]
+      perms["type"].as_s.should eq "array"
+      values = perms["items"]["enum"].as_a.map(&.as_s)
+      values.should eq ["read", "write", "execute"]
+    end
+
+    it "omits the synthesized None/All members of a Flags enum" do
+      props = TestWithFlagsEnum.json_schema["properties"].as_h
+      values = props["permissions"]["items"]["enum"].as_a.map(&.as_s)
+      values.should_not contain("none")
+      values.should_not contain("all")
+    end
+
+    it "generates a Flags enum schema that matches its JSON serialization" do
+      props = TestWithFlagsEnum.json_schema["properties"].as_h
+      serialized = JSON.parse((TestPermission::Read | TestPermission::Write).to_json)
+      serialized.as_a.map(&.as_s).should eq ["read", "write"]
+      props["permissions"]["type"].as_s.should eq "array"
+      allowed = props["permissions"]["items"]["enum"].as_a.map(&.as_s)
+      serialized.as_a.each { |v| allowed.should contain(v.as_s) }
+    end
+
     it "generates Union schema with oneOf" do
       schema = TestWithUnion.json_schema
       props = schema["properties"].as_h
@@ -776,6 +909,30 @@ describe Fm do
       types = one_of.map(&.["type"].as_s)
       types.should contain("string")
       types.should contain("integer")
+    end
+
+    # Regression: a nilable union kept only its first non-nil variant, so
+    # `String | Int32 | Nil` was described as a bare integer and the model
+    # was never allowed to return a string.
+    it "keeps every non-nil variant of a nilable union" do
+      schema = TestWithNilableUnion.json_schema
+      props = schema["properties"].as_h
+      one_of = props["value"]["oneOf"].as_a
+      types = one_of.map(&.["type"].as_s)
+      types.should contain("string")
+      types.should contain("integer")
+      one_of.size.should eq 2
+    end
+
+    it "excludes a nilable union from required" do
+      schema = TestWithNilableUnion.json_schema
+      schema["required"]?.should be_nil
+    end
+
+    it "still describes a single-variant nilable type by its non-nil shape" do
+      props = TestWithOptional.json_schema["properties"].as_h
+      props["nickname"]["type"].as_s.should eq "string"
+      props["nickname"]["oneOf"]?.should be_nil
     end
 
     it "generates integer schema for all integer types" do
@@ -953,6 +1110,52 @@ describe Fm do
       Fm.compacted_instructions("base", "  ").should eq "base"
     end
 
+    # Regression: `content` / `text` were skipped during the recursive walk
+    # whether or not this frame had consumed them as strings. FoundationModels
+    # nests message segments under those keys, so every nested segment's text
+    # was dropped — under-counting tokens and feeding compaction a transcript
+    # with the actual conversation missing.
+    it "extracts text nested under a content array" do
+      json = %({"transcript":{"entries":[{"role":"user","content":[{"text":"nested prompt"}]}]}})
+      text = Fm.transcript_to_text(json)
+      text.should contain("nested prompt")
+    end
+
+    it "extracts text nested under a text object" do
+      json = %({"summary":{"text":{"value":"nested value"}}})
+      Fm.transcript_to_text(json).should contain("nested value")
+    end
+
+    it "keeps sibling entries when one nests its content" do
+      json = %({"transcript":{"entries":[
+        {"role":"user","contents":[{"text":"flat entry"}]},
+        {"role":"assistant","content":[{"text":"nested entry"}]}
+      ]}})
+      text = Fm.transcript_to_text(json)
+      text.should contain("flat entry")
+      text.should contain("nested entry")
+    end
+
+    it "counts nested transcript text toward the token estimate" do
+      nested = %({"transcript":{"entries":[{"role":"user","content":[{"text":"#{"x" * 400}"}]}]}})
+      limit = Fm::ContextLimit.new(max_tokens: 100, reserved_response_tokens: 0, chars_per_token: 4)
+      usage = Fm.context_usage_from_transcript(nested, limit)
+      # 400 chars of payload at 4 chars/token ≈ 100 tokens; the raw-JSON
+      # fallback would have been counted instead had extraction found nothing.
+      usage.estimated_tokens.should be >= 100
+      Fm.transcript_to_text(nested).should_not contain("entries")
+    end
+
+    it "still prefers the role-prefixed form for string content" do
+      json = %([{"role":"user","content":"Hello"}])
+      Fm.transcript_to_text(json).should eq "user: Hello"
+    end
+
+    it "uses text as the role's content when content is absent" do
+      json = %([{"role":"user","text":"via text"}])
+      Fm.transcript_to_text(json).should eq "user: via text"
+    end
+
     it "estimate_tokens with single char per token" do
       Fm.estimate_tokens("hello", 1).should eq 5
     end
@@ -1012,6 +1215,60 @@ describe Fm do
       json.should contain(%("top":20))
       json.should contain(%("seed":55))
       json.should contain(%("maximumResponseTokens":256))
+    end
+
+    # Regression: a bare `seed` was serialized as a top-level `{"seed":N}` with
+    # no `sampling` object. The Swift decoder only reads a seed from inside
+    # `sampling`, so the seed was dropped and output stayed non-deterministic —
+    # exactly the opposite of what `GenerationOptions.new(seed:)` documents.
+    it "carries a bare seed inside a seeded sampling mode" do
+      opts = Fm::GenerationOptions.new(seed: 42_u64)
+      parsed = JSON.parse(opts.to_json)
+      sampling = parsed["sampling"]
+      sampling["mode"].as_s.should eq "random"
+      sampling["seed"].as_i.should eq 42
+      sampling["probabilityThreshold"].as_f.should eq 1.0
+    end
+
+    it "does not duplicate a bare seed at the top level" do
+      json = Fm::GenerationOptions.new(seed: 42_u64).to_json
+      json.scan(/"seed"/).size.should eq 1
+    end
+
+    it "gives a seed-only SamplingMode a mode the framework can seed" do
+      opts = Fm::GenerationOptions.new(sampling_mode: Fm::SamplingMode.random(seed: 7_u64))
+      sampling = JSON.parse(opts.to_json)["sampling"]
+      sampling["seed"].as_i.should eq 7
+      sampling["probabilityThreshold"].as_f.should eq 1.0
+    end
+
+    it "pairs a top-level seed with plain random sampling" do
+      opts = Fm::GenerationOptions.new(sampling: Fm::Sampling::Random, seed: 99_u64)
+      parsed = JSON.parse(opts.to_json)
+      parsed["sampling"]["probabilityThreshold"].as_f.should eq 1.0
+      parsed["seed"].as_i.should eq 99
+    end
+
+    it "leaves an unseeded sampling mode untruncated" do
+      parsed = JSON.parse(Fm::GenerationOptions.new(sampling: Fm::Sampling::Random).to_json)
+      parsed["sampling"]["mode"].as_s.should eq "random"
+      parsed["sampling"]["probabilityThreshold"]?.should be_nil
+      parsed["sampling"]["seed"]?.should be_nil
+    end
+
+    it "does not add a threshold to greedy sampling" do
+      opts = Fm::GenerationOptions.new(sampling: Fm::Sampling::Greedy, seed: 5_u64)
+      parsed = JSON.parse(opts.to_json)
+      parsed["sampling"]["mode"].as_s.should eq "greedy"
+      parsed["sampling"]["probabilityThreshold"]?.should be_nil
+    end
+
+    it "keeps an explicit top-k over the seed fallback" do
+      opts = Fm::GenerationOptions.new(sampling_mode: Fm::SamplingMode.random(top: 10, seed: 3_u64))
+      parsed = JSON.parse(opts.to_json)
+      parsed["sampling"]["top"].as_i.should eq 10
+      parsed["sampling"]["probabilityThreshold"]?.should be_nil
+      parsed["sampling"]["seed"].as_i.should eq 3
     end
 
     it "effective_sampling_mode returns nil when nothing set" do
@@ -1382,6 +1639,41 @@ describe Fm do
       transcript.entries.should be_empty
     end
 
+    # Regression: `Transcript` exposed `to_json`/`from_json` but had no
+    # `to_json(JSON::Builder)` overload, so embedding one in any larger JSON
+    # document — the obvious way to persist a session next to its metadata —
+    # failed to compile.
+    it "embeds in an enclosing JSON document" do
+      transcript = Fm::Transcript.new(%({"transcript":{"entries":[{"role":"user"}]}}))
+      json = {"label" => "chat-1", "transcript" => transcript}.to_json
+      parsed = JSON.parse(json)
+      parsed["label"].as_s.should eq "chat-1"
+      parsed["transcript"]["transcript"]["entries"].as_a.size.should eq 1
+    end
+
+    it "embeds as JSON null when the transcript is malformed" do
+      json = {"transcript" => Fm::Transcript.new("not json{")}.to_json
+      # The enclosing document stays valid rather than inheriting the garbage.
+      parsed = JSON.parse(json)
+      parsed["transcript"].raw.should be_nil
+    end
+
+    it "round-trips through a JSON::Serializable holder" do
+      original = %({"label":"chat-1","transcript":{"transcript":{"entries":[{"role":"user"}]}}})
+      saved = TestSavedSession.from_json(original)
+      saved.label.should eq "chat-1"
+      saved.transcript.entries.size.should eq 1
+      saved.transcript.entries[0]["role"].as_s.should eq "user"
+      JSON.parse(saved.to_json).should eq JSON.parse(original)
+    end
+
+    it "keeps writing raw text to an IO" do
+      original = %({"transcript":{"entries":[]}})
+      io = IO::Memory.new
+      Fm::Transcript.new(original).to_json(io)
+      io.to_s.should eq original
+    end
+
     # Regression: malformed JSON must not raise; to_any degrades to a
     # null JSON::Any and the value is cached for subsequent calls.
     it "returns null JSON::Any for malformed JSON without raising" do
@@ -1429,6 +1721,42 @@ describe Fm do
     end
   end
 
+  # Regression: `timeout.total_milliseconds.to_u64` truncated any
+  # sub-millisecond span to 0, which `Session#respond(timeout:)` treats as
+  # "no timeout" — so a deliberately tiny timeout silently became an
+  # unbounded wait — and raised a bare `OverflowError` for negative spans.
+  describe "Fm.timeout_to_ms" do
+    it "rounds a sub-millisecond timeout up instead of down to zero" do
+      Fm.timeout_to_ms(0.5.milliseconds).should eq 1_u64
+      Fm.timeout_to_ms(1.microsecond).should eq 1_u64
+      Fm.timeout_to_ms(1.nanosecond).should eq 1_u64
+    end
+
+    it "reserves zero for an explicitly zero timeout" do
+      Fm.timeout_to_ms(Time::Span.zero).should eq 0_u64
+    end
+
+    it "converts whole millisecond spans exactly" do
+      Fm.timeout_to_ms(1.millisecond).should eq 1_u64
+      Fm.timeout_to_ms(10.seconds).should eq 10_000_u64
+      Fm.timeout_to_ms(2.minutes).should eq 120_000_u64
+    end
+
+    it "rounds a fractional millisecond span up" do
+      Fm.timeout_to_ms(1500.microseconds).should eq 2_u64
+    end
+
+    it "raises ArgumentError for a negative timeout" do
+      expect_raises(ArgumentError, "timeout must not be negative") do
+        Fm.timeout_to_ms(-1.seconds)
+      end
+    end
+
+    it "saturates instead of overflowing for an absurdly large timeout" do
+      Fm.timeout_to_ms(Time::Span::MAX).should eq UInt64::MAX
+    end
+  end
+
   describe "StreamState" do
     it "starts without error" do
       chunks = [] of String
@@ -1457,6 +1785,86 @@ describe Fm do
     it "does not raise when no error" do
       state = Fm::Session::StreamState.new(->(_s : String) { })
       state.raise_if_error! # should not raise
+    end
+
+    # Regression: an exception raised by the caller's block used to unwind
+    # straight into the Swift frame that invoked the callback. That frame runs
+    # in a `DispatchQueue.sync` on a detached task and owns the semaphore the
+    # FFI call is blocked on, so the process aborted instead of the caller
+    # seeing an ordinary Crystal exception.
+    it "captures an exception raised by the caller's block" do
+      state = Fm::Session::StreamState.new(->(_s : String) { raise "block blew up" })
+      state.deliver("chunk")
+      state.callback_error.should_not be_nil
+      state.callback_error.not_nil!.message.should eq "block blew up"
+    end
+
+    it "re-raises the caller's exception with its original type" do
+      state = Fm::Session::StreamState.new(->(_s : String) { raise KeyError.new("missing") })
+      state.deliver("chunk")
+      expect_raises(KeyError, "missing") do
+        state.raise_if_error!
+      end
+    end
+
+    it "stops delivering chunks once the block has raised" do
+      seen = [] of String
+      state = Fm::Session::StreamState.new(->(s : String) {
+        seen << s
+        raise "stop" if s == "b"
+      })
+      state.deliver("a")
+      state.deliver("b")
+      state.deliver("c")
+      seen.should eq ["a", "b"]
+    end
+
+    it "prefers the block's exception over the cancellation it triggered" do
+      state = Fm::Session::StreamState.new(->(_s : String) { raise "from block" })
+      state.deliver("chunk")
+      state.error = "Cancelled"
+      state.error_code = Fm::GenerationErrorCode::Cancelled.value
+      ex = expect_raises(Exception) { state.raise_if_error! }
+      ex.message.should eq "from block"
+      ex.should_not be_a(Fm::CancelledError)
+    end
+
+    it "invokes the cancel hook once when the block raises" do
+      cancels = 0
+      state = Fm::Session::StreamState.new(
+        ->(_s : String) { raise "boom" },
+        -> { cancels += 1; nil }
+      )
+      state.deliver("a")
+      state.deliver("b")
+      cancels.should eq 1
+    end
+
+    it "does not cancel when the block succeeds" do
+      cancels = 0
+      state = Fm::Session::StreamState.new(->(_s : String) { }, -> { cancels += 1; nil })
+      state.deliver("a")
+      cancels.should eq 0
+    end
+
+    it "still reports the block's exception when cancelling fails" do
+      state = Fm::Session::StreamState.new(
+        ->(_s : String) { raise "original" },
+        -> { raise "cancel failed" }
+      )
+      state.deliver("a")
+      state.callback_error.not_nil!.message.should eq "original"
+      expect_raises(Exception, "original") { state.raise_if_error! }
+    end
+
+    it "delivers normally when the block does not raise" do
+      seen = [] of String
+      state = Fm::Session::StreamState.new(->(s : String) { seen << s })
+      state.deliver("a")
+      state.deliver("b")
+      seen.should eq ["a", "b"]
+      state.callback_error.should be_nil
+      state.raise_if_error!
     end
 
     it "invokes on_chunk callback" do

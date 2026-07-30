@@ -95,7 +95,7 @@ module Fm
     # Useful when the model is still downloading (`ModelNotReady`).
     #
     # Raises `TimeoutError` if the model is still not available after
-    # the given timeout.
+    # the given timeout. Raises `ArgumentError` for a negative timeout.
     #
     # ```
     # model = Fm::SystemLanguageModel.new
@@ -103,7 +103,7 @@ module Fm
     # puts "Model is ready!"
     # ```
     def wait_until_available(timeout : Time::Span) : Nil
-      timeout_ms = timeout.total_milliseconds.to_u64
+      timeout_ms = Fm.timeout_to_ms(timeout)
 
       error = Fm.make_error_ptr
 

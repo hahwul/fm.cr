@@ -90,9 +90,34 @@ module Fm
       io << @json
     end
 
+    # Writes the transcript into an enclosing JSON document.
+    #
+    # Without this overload a `Transcript` could not appear inside any larger
+    # JSON structure — `{"saved_at" => t, "transcript" => transcript}.to_json`
+    # failed to compile, even though the type otherwise presents itself as
+    # JSON-serializable.
+    #
+    # Unlike `#to_json(IO)`, which reproduces the stored text verbatim because
+    # it is the whole document, a malformed transcript is written here as JSON
+    # `null` — the same degradation `#to_any` applies — so an unparseable
+    # transcript cannot corrupt the document it is embedded in.
+    def to_json(builder : JSON::Builder) : Nil
+      if to_any.raw.nil?
+        builder.null
+      else
+        builder.raw(@json)
+      end
+    end
+
     # Creates a `Transcript` from a JSON string.
     def self.from_json(json : String) : self
       new(json)
+    end
+
+    # Reads a transcript nested inside an enclosing JSON document, so a type
+    # including `JSON::Serializable` can hold a `Transcript` field.
+    def self.new(pull : JSON::PullParser) : self
+      new(pull.read_raw)
     end
   end
 end

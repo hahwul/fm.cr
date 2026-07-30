@@ -17,6 +17,16 @@ module Fm
   # mode = Fm::SamplingMode.random(probability_threshold: 0.9)
   # ```
   struct SamplingMode
+    # Top-p value that keeps the entire token distribution, i.e. plain random
+    # sampling with no truncation.
+    #
+    # FoundationModels exposes no seed-only sampling mode — a seed can only be
+    # supplied alongside top-k or top-p — so a bare seed is serialized as
+    # `random(probability_threshold: FULL_DISTRIBUTION_THRESHOLD, seed: ...)`.
+    # That leaves the sampling distribution untouched while giving the
+    # framework a mode it can attach the seed to.
+    FULL_DISTRIBUTION_THRESHOLD = 1.0
+
     # The base strategy: Random or Greedy.
     getter strategy : Sampling
 
@@ -48,8 +58,10 @@ module Fm
     # Random sampling with optional top-k, top-p, and seed.
     #
     # NOTE: `top` and `probability_threshold` cannot both be specified.
-    # NOTE: `seed` alone (without `top` or `probability_threshold`) is not
-    #   supported by Apple's FoundationModels API and will be ignored.
+    #
+    # A `seed` on its own is honoured: FoundationModels only accepts a seed
+    # alongside top-k or top-p, so serialization pairs it with a top-p of
+    # `FULL_DISTRIBUTION_THRESHOLD`, which keeps the full token distribution.
     def self.random(*, top : Int32? = nil, probability_threshold : Float64? = nil, seed : UInt64? = nil) : self
       if top && probability_threshold
         raise ArgumentError.new("Cannot specify both top (top-k) and probability_threshold (top-p)")
@@ -123,16 +135,29 @@ module Fm
             json.field "temperature", temp
           end
 
+          # A bare `seed` (no sampling mode at all) still has to reach the
+          # framework as a seeded random mode; otherwise the seed is dropped
+          # and generation stays non-deterministic despite being asked for.
           mode = effective_sampling_mode
+          if mode.nil? && (bare_seed = @seed)
+            mode = SamplingMode.random(
+              probability_threshold: SamplingMode::FULL_DISTRIBUTION_THRESHOLD,
+              seed: bare_seed
+            )
+          end
+
           if mode
             json.field "sampling" do
               json.object do
                 json.field "mode", mode.strategy == Sampling::Greedy ? "greedy" : "random"
                 if t = mode.top
                   json.field "top", t
-                end
-                if p = mode.probability_threshold
+                elsif p = mode.probability_threshold
                   json.field "probabilityThreshold", p
+                elsif mode.strategy == Sampling::Random && (mode.seed || @seed)
+                  # Random sampling with a seed but no truncation: pair it with
+                  # a full-distribution top-p so the seed has a mode to ride on.
+                  json.field "probabilityThreshold", SamplingMode::FULL_DISTRIBUTION_THRESHOLD
                 end
                 if s = mode.seed
                   json.field "seed", s

@@ -214,6 +214,12 @@ module Fm
   end
 
   TRANSCRIPT_TEXT_KEYS = {"content", "text", "prompt", "response", "instructions"}
+
+  # :nodoc:
+  # Retained for backwards compatibility. `collect_transcript_lines` now skips
+  # only the keys it actually consumed in the current frame, so a static skip
+  # list would hide nested text; see the comment there.
+  @[Deprecated("No longer used; keys are skipped only once consumed")]
   TRANSCRIPT_SKIP_KEYS = {"role", "content", "text", "prompt", "response", "instructions"}
 
   # :nodoc:
@@ -223,25 +229,35 @@ module Fm
       value.as_a.each { |item| collect_transcript_lines(item, lines) }
     when Hash
       map = value.as_h
-      processed_content = false
+
+      # Keys whose text this frame has already emitted. Only these are skipped
+      # during the recursive walk below: previously the skip list was static, so
+      # a `"content"` / `"text"` key holding an *array* or *object* (which is
+      # how FoundationModels nests message segments) was never descended into
+      # and its text vanished from the extraction entirely.
+      consumed = Set(String).new
 
       if role = map["role"]?.try(&.as_s?)
-        content = map["content"]?.try(&.as_s?) || map["text"]?.try(&.as_s?)
-        if content
+        consumed << "role"
+        if content = map["content"]?.try(&.as_s?)
           lines << "#{role}: #{content}"
-          processed_content = true
+          consumed << "content"
+        elsif text = map["text"]?.try(&.as_s?)
+          lines << "#{role}: #{text}"
+          consumed << "text"
         end
       end
 
       TRANSCRIPT_TEXT_KEYS.each do |key|
-        next if processed_content && (key == "content" || key == "text")
+        next if consumed.includes?(key)
         if text = map[key]?.try(&.as_s?)
           lines << text
+          consumed << key
         end
       end
 
       map.each do |key, val|
-        next if TRANSCRIPT_SKIP_KEYS.includes?(key)
+        next if consumed.includes?(key)
         collect_transcript_lines(val, lines)
       end
     end

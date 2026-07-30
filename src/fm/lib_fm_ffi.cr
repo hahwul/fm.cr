@@ -3,6 +3,29 @@ lib LibC
 end
 
 module Fm
+  # :nodoc:
+  # Converts a `Time::Span` timeout into the whole milliseconds the FFI layer
+  # expects.
+  #
+  # `Time::Span#total_milliseconds` is a `Float64`, so a plain `.to_u64` both
+  # truncated any sub-millisecond timeout to `0` — which every caller reads as
+  # "no timeout", so the call would instead block indefinitely — and raised a
+  # bare `OverflowError` for a negative span. Positive spans are rounded *up*
+  # so a deliberately tiny timeout still bounds the call, and negatives are
+  # rejected with a message that names the offending argument.
+  def self.timeout_to_ms(timeout : Time::Span) : UInt64
+    if timeout.negative?
+      raise ArgumentError.new("timeout must not be negative, got #{timeout}")
+    end
+
+    ms = timeout.total_milliseconds
+    return 0_u64 if ms == 0
+
+    rounded = ms.ceil
+    return UInt64::MAX if rounded >= UInt64::MAX.to_f64
+    rounded.to_u64
+  end
+
   # Raw C FFI declarations matching the @_cdecl functions in ext/ffi.swift.
   #
   # Memory management conventions:

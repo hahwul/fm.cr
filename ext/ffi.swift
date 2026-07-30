@@ -927,12 +927,12 @@ public func fm_session_stream(
     let task = Task.detached {
         do {
             let stream = state.session.streamResponse(to: promptString, options: options)
-            var previousLength = 0
+            var previousContent = ""
 
             for try await partialResponse in stream {
                 let content = partialResponse.content
-                let delta = String(content.dropFirst(previousLength))
-                previousLength = content.count
+                let delta = streamDelta(previous: previousContent, current: content)
+                previousContent = content
 
                 if !delta.isEmpty {
                     callbackQueue.sync {
@@ -1239,12 +1239,12 @@ public func fm_session_stream_json(
             if let schema = schema {
                 // Native GenerationSchema API
                 let stream = state.session.streamResponse(to: promptString, schema: schema, options: options)
-                var previousLength = 0
+                var previousContent = ""
 
                 for try await partialResponse in stream {
                     let content = partialResponse.content.jsonString
-                    let delta = String(content.dropFirst(previousLength))
-                    previousLength = content.count
+                    let delta = streamDelta(previous: previousContent, current: content)
+                    previousContent = content
 
                     if !delta.isEmpty {
                         callbackQueue.sync {
@@ -1273,12 +1273,12 @@ public func fm_session_stream_json(
                 Output only the JSON object, with no additional text, markdown formatting, or explanation.
                 """
                 let stream = state.session.streamResponse(to: structuredPrompt, options: options)
-                var previousLength = 0
+                var previousContent = ""
 
                 for try await partialResponse in stream {
                     let content = partialResponse.content
-                    let delta = String(content.dropFirst(previousLength))
-                    previousLength = content.count
+                    let delta = streamDelta(previous: previousContent, current: content)
+                    previousContent = content
 
                     if !delta.isEmpty {
                         callbackQueue.sync {
@@ -1334,6 +1334,43 @@ private func mapStreamingError(_ error: Error) -> (Int32, String) {
     } else {
         return (FFIErrorCode.generationFailed.rawValue, error.localizedDescription)
     }
+}
+
+// MARK: - Streaming Deltas
+
+/// Returns the part of a cumulative snapshot that is new since the previous one.
+///
+/// `streamResponse` yields whole snapshots, not increments, so the callback has
+/// to diff consecutive snapshots itself. Tracking a `Character` count and
+/// calling `dropFirst(count)` gets that wrong whenever a snapshot extends the
+/// *last grapheme* of its predecessor instead of appending a new one:
+///
+///   - "cafe" becoming "café" as `e` + U+0301 is still 4 `Character`s, so
+///     `dropFirst(4)` yielded "" and the combining mark was re-sent on the
+///     next snapshot, emitting a doubled accent.
+///   - Growing a ZWJ emoji sequence (👨 → 👨‍👩 → 👨‍👩‍👦) is one `Character`
+///     throughout, so components were duplicated the same way.
+///
+/// Diffing over the common prefix by unicode scalar fixes both, and cutting on
+/// a scalar boundary keeps every delta valid UTF-8 on its own.
+///
+/// A snapshot that *revises* rather than extends (a corrected typo, or `e`
+/// replaced by precomposed `é`) still cannot be fully represented: the callback
+/// is append-only, so text already handed to the caller cannot be retracted.
+/// Emitting just the divergent suffix is the closest available answer, and is
+/// never worse than slicing at a now-meaningless offset.
+func streamDelta(previous: String, current: String) -> String {
+    let prev = Array(previous.unicodeScalars)
+    let curr = Array(current.unicodeScalars)
+
+    var shared = 0
+    while shared < prev.count, shared < curr.count, prev[shared] == curr[shared] {
+        shared += 1
+    }
+
+    var scalars = String.UnicodeScalarView()
+    scalars.append(contentsOf: curr[shared...])
+    return String(scalars)
 }
 
 // MARK: - String Helpers

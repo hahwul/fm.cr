@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- `Generable` kept only the first non-nil variant of a nilable union, so `String | Int32 | Nil` was described as a bare integer and the schema rejected the string variant
+- `Fm::Guide` truncated fractional `minimum` / `maximum` bounds to integers, widening `minimum: 0.5` to `0` and narrowing `maximum: 9.5` to `9`
+- `Generable` described a `@[Flags]` enum as a string, but `JSON::Serializable` reads and writes it as an array of member names, so structured generation could never decode it; the synthesized `None` / `All` members were advertised as values too
+- Only the last of several stacked `Fm::Guide` annotations on a field was applied, silently discarding the rest
+- `Session#respond(timeout:)` and `SystemLanguageModel#wait_until_available` truncated sub-millisecond timeouts to `0`, which means "no timeout" — a tiny timeout became an unbounded wait — and raised a bare `OverflowError` for negative spans
+- Transcript text nested under a `content` / `text` key (how FoundationModels represents multi-segment content) was dropped from text extraction, under-counting tokens and feeding compaction a transcript with the conversation missing
+- An exception raised in a `Session#stream` block unwound into the Swift frame holding the FFI semaphore, aborting the process instead of surfacing at the call site; `tool_callback` had the same exposure outside its inner rescue
+- A `seed` set without a sampling mode was serialized outside the `sampling` object, where the Swift decoder never read it, so requested reproducibility was silently dropped
+- `Transcript` could not be embedded in an enclosing JSON document — no `to_json(JSON::Builder)` overload existed — despite exposing `to_json` / `from_json`
+- Streaming deltas were computed from a `Character` count, so a snapshot extending the last grapheme (combining accents, ZWJ emoji sequences) emitted duplicated or missing characters
+- `ext/Makefile` hardcoded an `arm64` target, producing an unlinkable archive on x86_64 hosts, and printed a shell error when `xcrun` was unavailable
+
 ## v0.3.0
 
 ### Added

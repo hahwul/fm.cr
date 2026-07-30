@@ -88,7 +88,7 @@ Random sampling with optional constraints.
 
 > **Note:** `top` and `probability_threshold` cannot both be specified.
 >
-> **Note:** `seed` alone (without `top` or `probability_threshold`) is not supported by Apple's FoundationModels API and will be ignored. Use `seed` together with `top` or `probability_threshold` for reproducible sampling.
+> **Note:** Apple's FoundationModels API accepts a seed only alongside `top` or `probability_threshold`. A `seed` given on its own is therefore serialized as `probability_threshold: 1.0` (the full token distribution, i.e. plain random sampling) so the seed still takes effect. Set `top` or `probability_threshold` explicitly when you also want the distribution truncated.
 
 ### Properties
 
