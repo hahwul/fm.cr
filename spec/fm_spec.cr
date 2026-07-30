@@ -180,6 +180,13 @@ private struct TestWithUnsupportedType
   getter created_at : Time
 end
 
+private struct TestSavedSession
+  include JSON::Serializable
+
+  getter label : String
+  getter transcript : Fm::Transcript
+end
+
 private class TestTool < Fm::Tool
   def name : String
     "testTool"
@@ -1630,6 +1637,41 @@ describe Fm do
     it "creates from_json" do
       transcript = Fm::Transcript.from_json(%({"transcript":{"entries":[]}}))
       transcript.entries.should be_empty
+    end
+
+    # Regression: `Transcript` exposed `to_json`/`from_json` but had no
+    # `to_json(JSON::Builder)` overload, so embedding one in any larger JSON
+    # document — the obvious way to persist a session next to its metadata —
+    # failed to compile.
+    it "embeds in an enclosing JSON document" do
+      transcript = Fm::Transcript.new(%({"transcript":{"entries":[{"role":"user"}]}}))
+      json = {"label" => "chat-1", "transcript" => transcript}.to_json
+      parsed = JSON.parse(json)
+      parsed["label"].as_s.should eq "chat-1"
+      parsed["transcript"]["transcript"]["entries"].as_a.size.should eq 1
+    end
+
+    it "embeds as JSON null when the transcript is malformed" do
+      json = {"transcript" => Fm::Transcript.new("not json{")}.to_json
+      # The enclosing document stays valid rather than inheriting the garbage.
+      parsed = JSON.parse(json)
+      parsed["transcript"].raw.should be_nil
+    end
+
+    it "round-trips through a JSON::Serializable holder" do
+      original = %({"label":"chat-1","transcript":{"transcript":{"entries":[{"role":"user"}]}}})
+      saved = TestSavedSession.from_json(original)
+      saved.label.should eq "chat-1"
+      saved.transcript.entries.size.should eq 1
+      saved.transcript.entries[0]["role"].as_s.should eq "user"
+      JSON.parse(saved.to_json).should eq JSON.parse(original)
+    end
+
+    it "keeps writing raw text to an IO" do
+      original = %({"transcript":{"entries":[]}})
+      io = IO::Memory.new
+      Fm::Transcript.new(original).to_json(io)
+      io.to_s.should eq original
     end
 
     # Regression: malformed JSON must not raise; to_any degrades to a
