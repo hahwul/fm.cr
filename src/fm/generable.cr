@@ -53,45 +53,52 @@ module Fm
           \{% unless ann && ann[:ignore] %}
             prop_schema = Fm::Generable.type_to_schema(\{{ivar.type}})
 
-            \{% guide = ivar.annotation(Fm::Guide) %}
-            \{% if guide %}
+            # Every `Fm::Guide` on the field is applied, not just one:
+            # `ivar.annotation` returns only the last annotation, so stacking
+            # them (the documented way to combine, say, a description with an
+            # `any_of`) silently dropped all but the final one. Later
+            # annotations still win on a key they both set.
+            \{% guides = ivar.annotations(Fm::Guide) %}
+            \{% unless guides.empty? %}
               _h = prop_schema.as_h
 
-              \{% if guide[:description] %}
-                _h["description"] = JSON::Any.new(\{{guide[:description]}})
-              \{% end %}
+              \{% for guide in guides %}
+                \{% if guide[:description] %}
+                  _h["description"] = JSON::Any.new(\{{guide[:description]}})
+                \{% end %}
 
-              \{% if guide[:any_of] %}
-                _h["enum"] = JSON::Any.new(\{{guide[:any_of]}}.map { |v| JSON::Any.new(v) })
-              \{% end %}
+                \{% if guide[:any_of] %}
+                  _h["enum"] = JSON::Any.new(\{{guide[:any_of]}}.map { |v| JSON::Any.new(v) })
+                \{% end %}
 
-              \{% if guide[:constant] %}
-                _h["const"] = JSON::Any.new(\{{guide[:constant]}})
-              \{% end %}
+                \{% if guide[:constant] %}
+                  _h["const"] = JSON::Any.new(\{{guide[:constant]}})
+                \{% end %}
 
-              \{% if guide[:minimum] != nil %}
-                _h["minimum"] = Fm::Generable.number_to_json(\{{guide[:minimum]}})
-              \{% end %}
+                \{% if guide[:minimum] != nil %}
+                  _h["minimum"] = Fm::Generable.number_to_json(\{{guide[:minimum]}})
+                \{% end %}
 
-              \{% if guide[:maximum] != nil %}
-                _h["maximum"] = Fm::Generable.number_to_json(\{{guide[:maximum]}})
-              \{% end %}
+                \{% if guide[:maximum] != nil %}
+                  _h["maximum"] = Fm::Generable.number_to_json(\{{guide[:maximum]}})
+                \{% end %}
 
-              \{% if guide[:pattern] %}
-                _h["pattern"] = JSON::Any.new(\{{guide[:pattern]}})
-              \{% end %}
+                \{% if guide[:pattern] %}
+                  _h["pattern"] = JSON::Any.new(\{{guide[:pattern]}})
+                \{% end %}
 
-              \{% if guide[:min_items] != nil %}
-                _h["minItems"] = JSON::Any.new(\{{guide[:min_items]}}.to_i64)
-              \{% end %}
+                \{% if guide[:min_items] != nil %}
+                  _h["minItems"] = JSON::Any.new(\{{guide[:min_items]}}.to_i64)
+                \{% end %}
 
-              \{% if guide[:max_items] != nil %}
-                _h["maxItems"] = JSON::Any.new(\{{guide[:max_items]}}.to_i64)
-              \{% end %}
+                \{% if guide[:max_items] != nil %}
+                  _h["maxItems"] = JSON::Any.new(\{{guide[:max_items]}}.to_i64)
+                \{% end %}
 
-              \{% if guide[:count] != nil %}
-                _h["minItems"] = JSON::Any.new(\{{guide[:count]}}.to_i64)
-                _h["maxItems"] = JSON::Any.new(\{{guide[:count]}}.to_i64)
+                \{% if guide[:count] != nil %}
+                  _h["minItems"] = JSON::Any.new(\{{guide[:count]}}.to_i64)
+                  _h["maxItems"] = JSON::Any.new(\{{guide[:count]}}.to_i64)
+                \{% end %}
               \{% end %}
             \{% end %}
 

@@ -133,7 +133,7 @@ end
 ### Numeric Constraints
 
 ```crystal
-struct Range
+struct Measurement
   include JSON::Serializable
   include Fm::Generable
 
@@ -144,6 +144,10 @@ struct Range
   getter confidence : Float64
 end
 ```
+
+Integral bounds stay integers in the schema and fractional bounds stay fractional, so a `Float64` field can express a fractional range.
+
+> **Note:** avoid naming a struct after a type in Crystal's prelude (`Range`, `Time`, `Box`, ...) — doing so reopens that type instead of defining a new one and fails to compile.
 
 ### Array Constraints
 

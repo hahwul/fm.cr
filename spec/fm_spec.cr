@@ -64,6 +64,24 @@ private struct TestWithGuide
   getter year : Int32
 end
 
+private struct TestWithStackedGuides
+  include JSON::Serializable
+  include Fm::Generable
+
+  @[Fm::Guide(description: "Log level setting")]
+  @[Fm::Guide(any_of: ["debug", "info", "warn", "error"])]
+  getter log_level : String
+
+  @[Fm::Guide(minimum: 1)]
+  @[Fm::Guide(maximum: 10)]
+  @[Fm::Guide(description: "Priority")]
+  getter priority : Int32
+
+  @[Fm::Guide(minimum: 1)]
+  @[Fm::Guide(minimum: 5)]
+  getter last_wins : Int32
+end
+
 private struct TestWithFloatGuide
   include JSON::Serializable
   include Fm::Generable
@@ -678,6 +696,29 @@ describe Fm do
       props = schema["properties"].as_h
       props["score"]["minimum"].as_i.should eq 0
       props["score"]["maximum"].as_i.should eq 10
+    end
+
+    # Regression: `ivar.annotation` returns only the last matching annotation,
+    # so stacking several `Fm::Guide`s — the pattern the docs demonstrate for
+    # combining a description with an `any_of` — silently discarded every
+    # annotation but the final one.
+    it "applies every stacked Guide annotation" do
+      props = TestWithStackedGuides.json_schema["properties"].as_h
+      level = props["log_level"]
+      level["description"].as_s.should eq "Log level setting"
+      level["enum"].as_a.map(&.as_s).should eq ["debug", "info", "warn", "error"]
+    end
+
+    it "merges constraints spread across three Guide annotations" do
+      priority = TestWithStackedGuides.json_schema["properties"].as_h["priority"]
+      priority["minimum"].as_i.should eq 1
+      priority["maximum"].as_i.should eq 10
+      priority["description"].as_s.should eq "Priority"
+    end
+
+    it "lets the last Guide win when two set the same option" do
+      props = TestWithStackedGuides.json_schema["properties"].as_h
+      props["last_wins"]["minimum"].as_i.should eq 5
     end
 
     # Regression: numeric bounds were funnelled through `.to_i64`, so
