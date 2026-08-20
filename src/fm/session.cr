@@ -271,12 +271,17 @@ module Fm
     # json = session.respond_json("Generate a person", schema)
     # ```
     def respond_json(prompt : String, schema_json : String, options : GenerationOptions = GenerationOptions.default) : String
+      # Hand-written schemas go through the same normalization as `Generable`
+      # ones: without it the native guided-generation path rejects the document
+      # and Swift quietly falls back to asking for JSON in the prompt.
+      schema = Schema.normalize_json(schema_json)
+
       error = Fm.make_error_ptr
 
       response_ptr = LibFmFfi.fm_session_respond_json(
         @ptr,
         prompt.to_unsafe,
-        schema_json.to_unsafe,
+        schema.to_unsafe,
         options.to_json.to_unsafe,
         error
       )
@@ -308,13 +313,14 @@ module Fm
 
     # Streams a structured JSON response matching a schema.
     def stream_json(prompt : String, schema_json : String, options : GenerationOptions = GenerationOptions.default, &block : String ->) : Nil
+      schema = Schema.normalize_json(schema_json)
       state = StreamState.new(block, -> { cancel })
       boxed = Box(StreamState).box(state)
 
       LibFmFfi.fm_session_stream_json(
         @ptr,
         prompt.to_unsafe,
-        schema_json.to_unsafe,
+        schema.to_unsafe,
         options.to_json.to_unsafe,
         boxed,
         ->Session.on_chunk(Void*, LibC::Char*),

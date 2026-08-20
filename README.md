@@ -87,6 +87,51 @@ json = session.respond_json("Largest city in Japan", schema)
 puts json
 ```
 
+> Schemas are rewritten into the shape FoundationModels' `GenerationSchema`
+> decoder accepts (`title`, `additionalProperties`, `x-order`, `anyOf`) before
+> they cross the FFI boundary, so plain JSON Schema works as written and still
+> takes the native guided-generation path.
+
+### Generation Guides
+
+Annotate `Generable` fields with `Fm::Guide` to constrain what the model may
+produce:
+
+```crystal
+struct Movie
+  include JSON::Serializable
+  include Fm::Generable
+
+  @[Fm::Guide(description: "Movie title")]
+  getter title : String
+
+  @[Fm::Guide(any_of: ["G", "PG", "PG-13", "R"])]
+  getter rating : String
+
+  @[Fm::Guide(minimum: 0, maximum: 10)]
+  getter score : Int32
+
+  @[Fm::Guide(pattern: "^[A-Z]")]
+  getter director : String
+
+  @[Fm::Guide(min_items: 1, max_items: 5)]
+  getter genres : Array(String)
+end
+```
+
+| Option | JSON Schema keyword | Description |
+|--------|---------------------|-------------|
+| `description` | `description` | Human-readable field description |
+| `any_of` | `enum` | Restrict the value to a set of choices |
+| `constant` | `const` | Fix the field to a single value |
+| `minimum` / `maximum` | `minimum` / `maximum` | Numeric bounds |
+| `pattern` | `pattern` | Regex pattern for string values |
+| `min_items` / `max_items` | `minItems` / `maxItems` | Array length bounds |
+| `count` | `minItems` + `maxItems` | Exact array length |
+
+Several guides may be stacked on one field; all of them apply, and the last one
+wins on an option they both set.
+
 ### Tool Calling
 
 Define tools by subclassing `Fm::Tool`:
@@ -207,9 +252,27 @@ All errors inherit from `Fm::Error`:
 | `ModelNotReadyError` | Model is still downloading |
 | `GenerationError` | Generation failed |
 | `TimeoutError` | Operation timed out |
+| `CancelledError` | The operation was cancelled by the caller |
 | `InvalidInputError` | Invalid input provided |
 | `ToolCallError` | Tool invocation failed (includes `.tool_name` and `.arguments_json`) |
+| `UnsupportedSchemaTypeError` | A `Generable` field has no JSON Schema mapping (includes `.type_name`) |
 | `InternalError` | Internal FFI error |
+
+The following inherit from `GenerationError` and map one-to-one onto the
+FoundationModels generation error cases:
+
+| Error | Description |
+|-------|-------------|
+| `ExceededContextWindowSizeError` | The input exceeded the model's context window |
+| `AssetsUnavailableError` | Model assets are unavailable |
+| `GuardrailViolationError` | Blocked by a content-safety guardrail |
+| `UnsupportedGuideError` | A generation guide constraint is not supported |
+| `UnsupportedLanguageOrLocaleError` | The requested language or locale is unsupported |
+| `DecodingFailureError` | The model's output could not be decoded |
+| `RateLimitedError` | The request was rate-limited by the system |
+| `ConcurrentRequestsError` | Multiple concurrent requests on one session |
+| `RefusalError` | The model refused to generate a response |
+| `InvalidGenerationSchemaError` | The provided generation schema is invalid |
 
 ```crystal
 begin
@@ -229,10 +292,11 @@ end
 
 | Method | Description |
 |--------|-------------|
-| `.new` | Creates the default system language model |
+| `.new(use_case?, guardrails?)` | Creates the system language model |
 | `#available?` | Whether the model is ready |
 | `#availability` | Detailed availability status |
 | `#ensure_available!` | Raises if not available |
+| `#wait_until_available(timeout)` | Blocks until available, raising `TimeoutError` on expiry |
 | `#token_usage_for(prompt)` | Token count for a prompt (macOS 26.4+, returns `nil` if unavailable) |
 | `#token_usage_for_tools(instructions, tools_json?)` | Token count for instructions + tools (macOS 26.4+) |
 
@@ -247,7 +311,8 @@ end
 | `#respond_json(prompt, schema_json, options?)` | JSON response matching schema |
 | `#respond_structured(Type, prompt, options?)` | Typed structured response |
 | `#stream_json(prompt, schema_json, options?) { \|chunk\| }` | Streaming JSON response |
-| `#transcript_json` | Export conversation transcript |
+| `#transcript` | Conversation transcript as a `Fm::Transcript` |
+| `#transcript_json` | Export conversation transcript as raw JSON |
 | `#prewarm(prompt_prefix?)` | Prewarm the model |
 | `#cancel` | Cancel ongoing generation |
 | `#responding?` | Whether generation is in progress |
@@ -258,7 +323,19 @@ end
 |-----------|------|-------------|
 | `temperature` | `Float64?` | Sampling temperature (0.0-2.0) |
 | `sampling` | `Sampling?` | `Random` or `Greedy` |
+| `sampling_mode` | `SamplingMode?` | Advanced sampling; takes precedence over `sampling` |
 | `max_response_tokens` | `UInt32?` | Maximum response length |
+| `seed` | `UInt64?` | Seed for reproducible generation |
+
+`Fm::SamplingMode` adds top-k / top-p control:
+
+```crystal
+Fm::SamplingMode.greedy
+Fm::SamplingMode.random(top: 40, seed: 42_u64)              # top-k
+Fm::SamplingMode.random(probability_threshold: 0.9)          # top-p (nucleus)
+```
+
+`top` and `probability_threshold` are mutually exclusive.
 
 ## Build Requirements
 
