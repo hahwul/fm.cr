@@ -16,8 +16,13 @@ module Fm
   # end
   #
   # schema = Person.json_schema
-  # # => {"type" => "object", "properties" => {"name" => {"type" => "string"}, ...}, "required" => [...]}
+  # # => {"type" => "object", "properties" => {"name" => {"type" => "string"}, ...},
+  # #     "required" => [...], "title" => "Person", "additionalProperties" => false,
+  # #     "x-order" => [...]}
   # ```
+  #
+  # The extra `title` / `additionalProperties` / `x-order` keys are what
+  # FoundationModels' schema decoder requires; see `Fm::Schema`.
   #
   # You can use `Fm::Guide` annotations to add constraints:
   #
@@ -112,13 +117,14 @@ module Fm
         schema = {
           "type"       => JSON::Any.new("object"),
           "properties" => properties,
+          "required"   => JSON::Any.new(required),
         } of String => JSON::Any
 
-        unless required.empty?
-          schema["required"] = JSON::Any.new(required)
-        end
-
-        JSON::Any.new(schema)
+        # The result is normalized rather than returned raw: plain JSON Schema
+        # is not decodable by `FoundationModels.GenerationSchema`, so an
+        # un-normalized schema silently demotes every structured request to the
+        # prompt-based fallback. See `Fm::Schema`.
+        Fm::Schema.normalize(JSON::Any.new(schema), {{ @type.name.stringify }})
       end
     end
 
@@ -158,20 +164,21 @@ module Fm
           # A nilable union of several types (e.g. `String | Int32 | Nil`) still
           # has to describe every non-nil variant. Previously only the first was
           # emitted, producing a schema that rejected the other variants.
-          one_of = [] of JSON::Any
+          any_of = [] of JSON::Any
           {% for vt in non_nils %}
-            one_of << Fm::Generable.type_to_schema({{ vt }})
+            any_of << Fm::Generable.type_to_schema({{ vt }})
           {% end %}
-          JSON::Any.new({"oneOf" => JSON::Any.new(one_of)} of String => JSON::Any)
+          JSON::Any.new({"anyOf" => JSON::Any.new(any_of)} of String => JSON::Any)
         {% end %}
       {% elsif T.union? %}
-        # Non-nil union types → JSON Schema "oneOf"
+        # Non-nil union types → "anyOf". FoundationModels' schema decoder does
+        # not know "oneOf" and rejects any document containing it.
         {% variants = T.union_types %}
-        one_of = [] of JSON::Any
+        any_of = [] of JSON::Any
         {% for vt in variants %}
-          one_of << Fm::Generable.type_to_schema({{ vt }})
+          any_of << Fm::Generable.type_to_schema({{ vt }})
         {% end %}
-        JSON::Any.new({"oneOf" => JSON::Any.new(one_of)} of String => JSON::Any)
+        JSON::Any.new({"anyOf" => JSON::Any.new(any_of)} of String => JSON::Any)
       {% elsif T < Enum %}
         # Enum types → JSON Schema "enum" with member names (snake_case).
         #

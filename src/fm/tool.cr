@@ -53,6 +53,11 @@ module Fm
 
     # :nodoc:
     # Serializes tool definitions to JSON for FFI.
+    #
+    # Each `arguments_schema` is normalized first: Swift registers a tool
+    # individually only when its schema decodes as a `GenerationSchema`, and a
+    # plain JSON Schema never does, which used to collapse every tool into the
+    # generic `invoke_tool` fallback bridge. See `Fm::Schema`.
     def self.tools_to_json(tools : Array(Tool)) : String
       JSON.build do |json|
         json.array do
@@ -61,7 +66,7 @@ module Fm
               json.field "name", tool.name
               json.field "description", tool.description
               json.field "argumentsSchema" do
-                json.raw tool.arguments_schema.to_json
+                json.raw Schema.normalize(tool.arguments_schema, tool.name).to_json
               end
             end
           end

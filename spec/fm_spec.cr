@@ -82,6 +82,14 @@ private struct TestWithStackedGuides
   getter last_wins : Int32
 end
 
+private struct TestWithNumericConstant
+  include JSON::Serializable
+  include Fm::Generable
+
+  @[Fm::Guide(constant: 42)]
+  getter answer : Int32
+end
+
 private struct TestWithFloatGuide
   include JSON::Serializable
   include Fm::Generable
@@ -141,7 +149,7 @@ private struct TestWithNilableUnion
   include JSON::Serializable
   include Fm::Generable
 
-  getter value : String | Int32 | Nil
+  getter value : (String | Int32)?
 end
 
 private struct TestWithAllInts
@@ -900,15 +908,16 @@ describe Fm do
       serialized.as_a.each { |v| allowed.should contain(v.as_s) }
     end
 
-    it "generates Union schema with oneOf" do
+    it "generates Union schema with anyOf" do
       schema = TestWithUnion.json_schema
       props = schema["properties"].as_h
       val = props["value"]
-      one_of = val["oneOf"].as_a
-      one_of.size.should eq 2
-      types = one_of.map(&.["type"].as_s)
+      any_of = val["anyOf"].as_a
+      any_of.size.should eq 2
+      types = any_of.map(&.["type"].as_s)
       types.should contain("string")
       types.should contain("integer")
+      val["oneOf"]?.should be_nil
     end
 
     # Regression: a nilable union kept only its first non-nil variant, so
@@ -917,22 +926,22 @@ describe Fm do
     it "keeps every non-nil variant of a nilable union" do
       schema = TestWithNilableUnion.json_schema
       props = schema["properties"].as_h
-      one_of = props["value"]["oneOf"].as_a
-      types = one_of.map(&.["type"].as_s)
+      any_of = props["value"]["anyOf"].as_a
+      types = any_of.map(&.["type"].as_s)
       types.should contain("string")
       types.should contain("integer")
-      one_of.size.should eq 2
+      any_of.size.should eq 2
     end
 
     it "excludes a nilable union from required" do
       schema = TestWithNilableUnion.json_schema
-      schema["required"]?.should be_nil
+      schema["required"].as_a.should be_empty
     end
 
     it "still describes a single-variant nilable type by its non-nil shape" do
       props = TestWithOptional.json_schema["properties"].as_h
       props["nickname"]["type"].as_s.should eq "string"
-      props["nickname"]["oneOf"]?.should be_nil
+      props["nickname"]["anyOf"]?.should be_nil
     end
 
     it "generates integer schema for all integer types" do
@@ -1873,6 +1882,132 @@ describe Fm do
       state.on_chunk.call("hello")
       state.on_chunk.call(" world")
       chunks.should eq ["hello", " world"]
+    end
+  end
+
+  # Regression: `Fm::Generable` used to emit plain JSON Schema, which
+  # `FoundationModels.GenerationSchema` cannot decode. Every structured request
+  # therefore fell through to the prompt-based fallback in `ext/ffi.swift`, and
+  # every tool collapsed into the generic `invoke_tool` bridge. The shapes
+  # asserted below were checked against the real decoder on the macOS 26.5 SDK.
+  describe Fm::Schema do
+    it "gives a Generable schema the keys the native decoder requires" do
+      schema = TestPerson.json_schema
+      schema["type"].as_s.should eq "object"
+      schema["title"].as_s.should eq "TestPerson"
+      schema["additionalProperties"].as_bool.should be_false
+      schema["x-order"].as_a.map(&.as_s).should eq ["name", "age", "active"]
+      schema["required"].as_a.map(&.as_s).should eq ["name", "age", "active"]
+    end
+
+    it "always emits required, even when every field is optional" do
+      TestWithNilableUnion.json_schema["required"].as_a.should be_empty
+    end
+
+    it "lists optional fields in x-order but not in required" do
+      schema = TestWithOptional.json_schema
+      schema["x-order"].as_a.map(&.as_s).should eq ["name", "nickname", "score", "tags"]
+      schema["required"].as_a.map(&.as_s).should eq ["name", "score", "tags"]
+    end
+
+    it "orders x-order by the renamed JSON key" do
+      TestWithJsonField.json_schema["x-order"].as_a.map(&.as_s).should eq ["full_name"]
+    end
+
+    it "keeps a nested Generable's own type name as its title" do
+      nested = TestNested.json_schema["properties"]["person"]
+      nested["title"].as_s.should eq "TestPerson"
+      nested["additionalProperties"].as_bool.should be_false
+      nested["x-order"].as_a.map(&.as_s).should eq ["name", "age", "active"]
+    end
+
+    it "titles an anonymous union node" do
+      TestWithUnion.json_schema["properties"]["value"]["title"].as_s.should eq "TestWithUnionValue"
+    end
+
+    it "leaves a Hash schema as a map rather than a property bag" do
+      metadata = TestWithHash.json_schema["properties"]["metadata"]
+      metadata["additionalProperties"]["type"].as_s.should eq "string"
+      metadata["x-order"]?.should be_nil
+      metadata["title"]?.should be_nil
+    end
+
+    it "leaves an enum node untouched" do
+      color = TestWithEnum.json_schema["properties"]["color"]
+      color["type"].as_s.should eq "string"
+      color["enum"].as_a.map(&.as_s).should eq ["red", "green", "blue"]
+      color["title"]?.should be_nil
+    end
+
+    it "carries a non-string Guide constant as a single-value enum" do
+      # `const` only accepts a string; a numeric one used to make the whole
+      # document undecodable.
+      schema = TestWithNumericConstant.json_schema
+      answer = schema["properties"]["answer"]
+      answer["const"]?.should be_nil
+      answer["enum"].as_a.map(&.as_i).should eq [42]
+    end
+
+    it "keeps a string Guide constant as const" do
+      TestWithGuide.json_schema["properties"]["kind"]["const"].as_s.should eq "movie"
+    end
+
+    it "normalizes a hand-written object schema" do
+      raw = %({"type":"object","properties":{"city":{"type":"string"},"population":{"type":"integer"}},"required":["city","population"]})
+      schema = JSON.parse(Fm::Schema.normalize_json(raw))
+      schema["title"].as_s.should eq "Root"
+      schema["additionalProperties"].as_bool.should be_false
+      schema["x-order"].as_a.map(&.as_s).should eq ["city", "population"]
+      schema["required"].as_a.map(&.as_s).should eq ["city", "population"]
+    end
+
+    it "normalizes nested objects reached through properties, items and anyOf" do
+      raw = %({"type":"object","properties":{"people":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"}},"required":["name"]}}}})
+      item = JSON.parse(Fm::Schema.normalize_json(raw))["properties"]["people"]["items"]
+      item["title"].as_s.should eq "RootPeopleItem"
+      item["additionalProperties"].as_bool.should be_false
+      item["x-order"].as_a.map(&.as_s).should eq ["name"]
+    end
+
+    it "rewrites oneOf as anyOf" do
+      raw = %({"type":"object","properties":{"v":{"oneOf":[{"type":"string"},{"type":"integer"}]}},"required":["v"]})
+      value = JSON.parse(Fm::Schema.normalize_json(raw))["properties"]["v"]
+      value["oneOf"]?.should be_nil
+      value["anyOf"].as_a.size.should eq 2
+      value["title"].as_s.should eq "RootV"
+    end
+
+    it "uses the supplied root title" do
+      raw = %({"type":"object","properties":{"a":{"type":"string"}},"required":["a"]})
+      JSON.parse(Fm::Schema.normalize_json(raw, "Weather"))["title"].as_s.should eq "Weather"
+    end
+
+    it "keeps an x-order the caller already supplied" do
+      raw = %({"title":"P","type":"object","additionalProperties":false,"x-order":["b","a"],"required":[],"properties":{"a":{"type":"string"},"b":{"type":"string"}}})
+      JSON.parse(Fm::Schema.normalize_json(raw))["x-order"].as_a.map(&.as_s).should eq ["b", "a"]
+    end
+
+    it "is idempotent" do
+      raw = %({"type":"object","properties":{"v":{"oneOf":[{"type":"string"},{"type":"integer"}]}}})
+      once = Fm::Schema.normalize_json(raw)
+      Fm::Schema.normalize_json(once).should eq once
+    end
+
+    it "returns malformed JSON unchanged instead of raising" do
+      Fm::Schema.normalize_json("not json").should eq "not json"
+    end
+
+    it "returns a non-object schema unchanged" do
+      Fm::Schema.normalize_json("[1,2,3]").should eq "[1,2,3]"
+    end
+
+    it "normalizes a tool's arguments schema so Swift can register it natively" do
+      json = JSON.parse(Fm::Tool.tools_to_json([TestTool.new] of Fm::Tool))
+      schema = json[0]["argumentsSchema"]
+      schema["title"].as_s.should eq "testTool"
+      schema["additionalProperties"].as_bool.should be_false
+      schema["x-order"].as_a.map(&.as_s).should eq ["input"]
+      schema["required"].as_a.map(&.as_s).should eq ["input"]
     end
   end
 end

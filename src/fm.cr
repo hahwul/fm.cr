@@ -1,5 +1,6 @@
 require "./fm/lib_fm_ffi"
 require "./fm/error"
+require "./fm/schema"
 require "./fm/response"
 require "./fm/options"
 require "./fm/tool"
