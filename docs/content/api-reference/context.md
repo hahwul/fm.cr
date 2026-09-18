@@ -99,9 +99,10 @@ Fm::ContextLimit.new(
 
 ```crystal
 Fm::ContextLimit.default_on_device : Fm::ContextLimit
+Fm::ContextLimit.default_on_device(model : Fm::SystemLanguageModel) : Fm::ContextLimit
 ```
 
-Returns the default context limit for Apple's on-device models (4096 tokens).
+The model overload uses the active model's runtime-reported context size. It is available on macOS 26+ when the native extension is built with SDK 26.4 or later; the no-argument overload and builds using an older SDK use the conservative 4096-token fallback.
 
 ## Fm::ContextUsage
 
@@ -153,4 +154,4 @@ Result of a successful session compaction.
 
 | Constant | Value | Description |
 |----------|-------|-------------|
-| `DEFAULT_CONTEXT_TOKENS` | `4096` | Default context window size for on-device models |
+| `DEFAULT_CONTEXT_TOKENS` | `4096` | Conservative fallback when the runtime can't report the model's context size |

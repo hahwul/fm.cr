@@ -1,6 +1,6 @@
 import Foundation
 
-/// Returns a sentinel so Crystal can use local token estimation.
+/// Returns a sentinel so Crystal can report that token counting is unavailable.
 @_cdecl("fm_model_token_usage_for")
 public func fm_model_token_usage_for(
     _ modelPtr: UnsafeMutableRawPointer,
@@ -13,7 +13,7 @@ public func fm_model_token_usage_for(
     return tokenUsageUnavailableSentinel
 }
 
-/// Returns a sentinel so Crystal can use local token estimation.
+/// Returns a sentinel so Crystal can report that token counting is unavailable.
 @_cdecl("fm_model_token_usage_for_tools")
 public func fm_model_token_usage_for_tools(
     _ modelPtr: UnsafeMutableRawPointer,
@@ -25,5 +25,12 @@ public func fm_model_token_usage_for_tools(
     _ = instructions
     _ = toolsJson
     _ = errorOut
+    return tokenUsageUnavailableSentinel
+}
+
+/// Returns a sentinel so Crystal can report that context size is unavailable.
+@_cdecl("fm_model_context_size")
+public func fm_model_context_size(_ modelPtr: UnsafeMutableRawPointer) -> Int64 {
+    _ = modelPtr
     return tokenUsageUnavailableSentinel
 }

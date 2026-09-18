@@ -846,6 +846,15 @@ describe Fm do
       err = Fm::InvalidGenerationSchemaError.new("bad schema")
       err.is_a?(Fm::GenerationError).should be_true
     end
+
+    it "creates macOS 27 generation errors" do
+      errors = [
+        Fm::UnsupportedCapabilityError.new("unsupported capability"),
+        Fm::UnsupportedTranscriptContentError.new("unsupported content"),
+        Fm::TranscriptMutationWhileRespondingError.new("transcript changed"),
+      ]
+      errors.each(&.is_a?(Fm::GenerationError).should(be_true))
+    end
   end
 
   describe "UseCase enum" do
@@ -994,6 +1003,9 @@ describe Fm do
         Fm::ConcurrentRequestsError.new("test"),
         Fm::RefusalError.new("test"),
         Fm::InvalidGenerationSchemaError.new("test"),
+        Fm::UnsupportedCapabilityError.new("test"),
+        Fm::UnsupportedTranscriptContentError.new("test"),
+        Fm::TranscriptMutationWhileRespondingError.new("test"),
       ]
       errors.each do |err|
         err.is_a?(Fm::GenerationError).should be_true
@@ -1524,6 +1536,18 @@ describe Fm do
       err.is_a?(Fm::DecodingFailureError).should be_true
     end
 
+    it "maps macOS 27 error codes to typed errors" do
+      mappings = {
+        Fm::GenerationErrorCode::UnsupportedCapability             => Fm::UnsupportedCapabilityError,
+        Fm::GenerationErrorCode::UnsupportedTranscriptContent      => Fm::UnsupportedTranscriptContentError,
+        Fm::GenerationErrorCode::TranscriptMutationWhileResponding => Fm::TranscriptMutationWhileRespondingError,
+      }
+
+      mappings.each do |code, error_class|
+        Fm.error_from_stream(code.value, "test").class.should eq error_class
+      end
+    end
+
     it "maps generation to GenerationError" do
       err = Fm.error_from_stream(Fm::GenerationErrorCode::Generation.value, "generation error")
       err.is_a?(Fm::GenerationError).should be_true
@@ -1571,11 +1595,15 @@ describe Fm do
       Fm::GenerationErrorCode::ConcurrentRequests.value.should eq 14
       Fm::GenerationErrorCode::Refusal.value.should eq 15
       Fm::GenerationErrorCode::InvalidGenerationSchema.value.should eq 16
+      Fm::GenerationErrorCode::UnsupportedCapability.value.should eq 17
+      Fm::GenerationErrorCode::UnsupportedTranscriptContent.value.should eq 18
+      Fm::GenerationErrorCode::TranscriptMutationWhileResponding.value.should eq 19
     end
 
     it "resolves from integer values" do
       Fm::GenerationErrorCode.from_value?(0).should eq Fm::GenerationErrorCode::Unknown
       Fm::GenerationErrorCode.from_value?(16).should eq Fm::GenerationErrorCode::InvalidGenerationSchema
+      Fm::GenerationErrorCode.from_value?(19).should eq Fm::GenerationErrorCode::TranscriptMutationWhileResponding
       Fm::GenerationErrorCode.from_value?(99).should be_nil
     end
   end

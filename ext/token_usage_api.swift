@@ -17,20 +17,20 @@ private func noOpToolCallback(
     return nil
 }
 
-private func tokenUsageBridge(from toolsJson: UnsafePointer<CChar>?) throws -> GenericToolBridge? {
+private func tokenUsageTools(from toolsJson: UnsafePointer<CChar>?) throws -> [any Tool] {
     let toolDefinitions = try parseToolDefinitions(toolsJson)
     if toolDefinitions.isEmpty {
-        return nil
+        return []
     }
     let dispatcher = ToolDispatcher(
         toolDefinitions: toolDefinitions,
         userData: nil,
         callback: noOpToolCallback
     )
-    return GenericToolBridge(dispatcher: dispatcher)
+    return buildToolBridges(dispatcher: dispatcher)
 }
 
-/// Returns token usage for a prompt using 26.4+ APIs when available.
+/// Returns the token count for a prompt using 26.4+ APIs when available.
 /// Returns a sentinel when runtime APIs are unavailable.
 @_cdecl("fm_model_token_usage_for")
 public func fm_model_token_usage_for(
@@ -43,10 +43,10 @@ public func fm_model_token_usage_for(
 
     if #available(iOS 26.4, macOS 26.4, visionOS 26.4, *) {
         do {
-            let usage = try AsyncWaiter.wait {
-                try await model.tokenUsage(for: promptString)
+            let tokenCount = try AsyncWaiter.wait {
+                try await model.tokenCount(for: promptString)
             }
-            guard let tokenCount = Int64(exactly: usage.tokenCount) else {
+            guard let tokenCount = Int64(exactly: tokenCount) else {
                 throw TokenUsageError(message: "Token count value is out of Int64 range")
             }
             return tokenCount
@@ -58,12 +58,12 @@ public func fm_model_token_usage_for(
         }
     }
 
-    // Runtime is older than 26.4; Crystal will use local token estimation fallback.
+    // Runtime is older than 26.4; Crystal surfaces nil so callers can choose a fallback.
     _ = errorOut
     return tokenUsageUnavailableSentinel
 }
 
-/// Returns token usage for instructions + tools using 26.4+ APIs when available.
+/// Returns the token count for instructions + tools using 26.4+ APIs when available.
 /// Returns a sentinel when runtime APIs are unavailable.
 @_cdecl("fm_model_token_usage_for_tools")
 public func fm_model_token_usage_for_tools(
@@ -77,12 +77,19 @@ public func fm_model_token_usage_for_tools(
 
     if #available(iOS 26.4, macOS 26.4, visionOS 26.4, *) {
         do {
-            let bridge = try tokenUsageBridge(from: toolsJson)
-            let tools: [any Tool] = bridge.map { [$0] } ?? []
-            let usage = try AsyncWaiter.wait {
-                try await model.tokenUsage(for: Instructions(instructionsString), tools: tools)
+            let tools = try tokenUsageTools(from: toolsJson)
+            let tokenCount = try AsyncWaiter.wait {
+                let instructionsCount = try await model.tokenCount(for: Instructions(instructionsString))
+                guard !tools.isEmpty else { return instructionsCount }
+
+                let toolsCount = try await model.tokenCount(for: tools)
+                let (total, overflow) = instructionsCount.addingReportingOverflow(toolsCount)
+                guard !overflow else {
+                    throw TokenUsageError(message: "Combined token count value is out of Int range")
+                }
+                return total
             }
-            guard let tokenCount = Int64(exactly: usage.tokenCount) else {
+            guard let tokenCount = Int64(exactly: tokenCount) else {
                 throw TokenUsageError(message: "Token count value is out of Int64 range")
             }
             return tokenCount
@@ -94,7 +101,20 @@ public func fm_model_token_usage_for_tools(
         }
     }
 
-    // Runtime is older than 26.4; Crystal will use local token estimation fallback.
+    // Runtime is older than 26.4; Crystal surfaces nil so callers can choose a fallback.
     _ = errorOut
+    return tokenUsageUnavailableSentinel
+}
+
+/// Returns the model's context window size. The symbol was added in the 26.4
+/// SDK but is back-deployed by FoundationModels to macOS 26.0.
+@_cdecl("fm_model_context_size")
+public func fm_model_context_size(_ modelPtr: UnsafeMutableRawPointer) -> Int64 {
+    let model = Unmanaged<AnyObject>.fromOpaque(modelPtr).takeUnretainedValue() as! SystemLanguageModel
+
+    if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
+        return Int64(model.contextSize)
+    }
+
     return tokenUsageUnavailableSentinel
 }

@@ -13,7 +13,7 @@ session.respond("How does it compare to Ruby?")
 
 # Check context usage
 transcript = session.transcript
-limit = Fm::ContextLimit.default_on_device
+limit = Fm::ContextLimit.default_on_device(model)
 usage = Fm.context_usage_from_transcript(transcript, limit)
 
 puts "Estimated tokens: #{usage.estimated_tokens}"

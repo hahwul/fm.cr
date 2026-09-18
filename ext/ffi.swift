@@ -27,6 +27,9 @@ private enum FFIErrorCode: Int32 {
     case concurrentRequests = 14
     case refusal = 15
     case invalidGenerationSchema = 16
+    case unsupportedCapability = 17
+    case unsupportedTranscriptContent = 18
+    case transcriptMutationWhileResponding = 19
 }
 
 let tokenUsageUnavailableSentinel: Int64 = -2
@@ -113,13 +116,80 @@ private func createErrorFromException(_ error: Error, defaultCode: FFIErrorCode 
         )
     } else if let timeoutError = error as? TimeoutError {
         return createError(timeoutError.message, code: .timeout)
-    } else if let genError = error as? LanguageModelSession.GenerationError {
-        let (code, message) = mapGenerationError(genError)
+    } else if let (code, message) = mapFoundationModelsError(error) {
         return createError(message, code: code)
     } else {
         return createError(error.localizedDescription, code: defaultCode)
     }
 }
+
+/// Maps errors from both the macOS 26 and macOS 27 FoundationModels error
+/// hierarchies. Apps compiled with Xcode 27 receive the new, split error
+/// types even when they keep macOS 26 as their deployment target.
+private func mapFoundationModelsError(_ error: Error) -> (FFIErrorCode, String)? {
+#if compiler(>=6.4)
+    if #available(macOS 27.0, *) {
+        if let modelError = error as? LanguageModelError {
+            return mapLanguageModelError(modelError)
+        }
+        if let systemError = error as? SystemLanguageModel.Error {
+            switch systemError {
+            case .assetsUnavailable:
+                return (.assetsUnavailable, systemError.localizedDescription)
+            @unknown default:
+                return (.generationFailed, systemError.localizedDescription)
+            }
+        }
+        if let sessionError = error as? LanguageModelSession.Error {
+            switch sessionError {
+            case .concurrentRequests:
+                return (.concurrentRequests, sessionError.localizedDescription)
+            case .transcriptMutationWhileResponding:
+                return (.transcriptMutationWhileResponding, sessionError.localizedDescription)
+            @unknown default:
+                return (.generationFailed, sessionError.localizedDescription)
+            }
+        }
+        if let parsingError = error as? GeneratedContent.ParsingError {
+            return (.decodingFailure, parsingError.localizedDescription)
+        }
+    }
+#endif
+
+    if let generationError = error as? LanguageModelSession.GenerationError {
+        return mapGenerationError(generationError)
+    }
+    return nil
+}
+
+#if compiler(>=6.4)
+@available(macOS 27.0, *)
+private func mapLanguageModelError(_ error: LanguageModelError) -> (FFIErrorCode, String) {
+    let message = error.localizedDescription
+    switch error {
+    case .contextSizeExceeded:
+        return (.exceededContextWindowSize, message)
+    case .rateLimited:
+        return (.rateLimited, message)
+    case .guardrailViolation:
+        return (.guardrailViolation, message)
+    case .refusal:
+        return (.refusal, message)
+    case .unsupportedCapability:
+        return (.unsupportedCapability, message)
+    case .unsupportedTranscriptContent:
+        return (.unsupportedTranscriptContent, message)
+    case .unsupportedGenerationGuide:
+        return (.unsupportedGuide, message)
+    case .unsupportedLanguageOrLocale:
+        return (.unsupportedLanguageOrLocale, message)
+    case .timeout:
+        return (.timeout, message)
+    @unknown default:
+        return (.generationFailed, message)
+    }
+}
+#endif
 
 /// Maps FoundationModels GenerationError to specific FFI error codes.
 private func mapGenerationError(_ error: LanguageModelSession.GenerationError) -> (FFIErrorCode, String) {
@@ -479,7 +549,7 @@ final class PerToolBridge: Tool, @unchecked Sendable {
 /// Builds tool bridges from tool definitions.
 /// Each tool whose schema decodes successfully gets a PerToolBridge (individual registration).
 /// Tools whose schema fails to decode fall through to GenericToolBridge (fallback).
-private func buildToolBridges(dispatcher: ToolDispatcher) -> [any Tool] {
+func buildToolBridges(dispatcher: ToolDispatcher) -> [any Tool] {
     var perToolBridges: [any Tool] = []
     var failedDefs: [ToolDefinitionDTO] = []
 
@@ -1102,11 +1172,19 @@ private struct GenerationOptionsDTO: Decodable {
             // so seed-only falls through to no sampling mode (framework default).
         }
 
+#if compiler(>=6.4)
+        return GenerationOptions(
+            samplingMode: samplingParam,
+            temperature: temperature,
+            maximumResponseTokens: maximumResponseTokens.map { Int($0) }
+        )
+#else
         return GenerationOptions(
             sampling: samplingParam,
             temperature: temperature,
             maximumResponseTokens: maximumResponseTokens.map { Int($0) }
         )
+#endif
     }
 }
 
@@ -1326,8 +1404,7 @@ private func mapStreamingError(_ error: Error) -> (Int32, String) {
             msg += " [tool: \(name)]"
         }
         return (FFIErrorCode.toolError.rawValue, msg)
-    } else if let genError = error as? LanguageModelSession.GenerationError {
-        let (code, message) = mapGenerationError(genError)
+    } else if let (code, message) = mapFoundationModelsError(error) {
         return (code.rawValue, message)
     } else if let timeoutError = error as? TimeoutError {
         return (FFIErrorCode.timeout.rawValue, timeoutError.message)
@@ -1385,7 +1462,7 @@ public func fm_string_free(_ s: UnsafeMutablePointer<CChar>?) {
 // MARK: - Async Helpers
 
 /// Helper for synchronously running Swift async code.
-private final class AsyncWaiter {
+final class AsyncWaiter {
     private final class AsyncState<T: Sendable>: @unchecked Sendable {
         var result: Result<T, Error>?
         let semaphore = DispatchSemaphore(value: 0)

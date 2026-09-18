@@ -63,6 +63,7 @@ module Fm
     # Token usage
     fun fm_model_token_usage_for(model : Void*, prompt : LibC::Char*, error_out : Void**) : Int64
     fun fm_model_token_usage_for_tools(model : Void*, instructions : LibC::Char*, tools_json : LibC::Char*, error_out : Void**) : Int64
+    fun fm_model_context_size(model : Void*) : Int64
 
     # -- Adapter functions --
 
