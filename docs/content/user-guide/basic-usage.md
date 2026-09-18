@@ -103,20 +103,20 @@ end
 
 See the [Errors](/api-reference/errors/) reference for the complete list.
 
-## Token Usage
+## Token Counting
 
-Estimate how many tokens a prompt will use (requires macOS 26.4+):
+Count how many tokens a prompt will use (requires macOS 26.4+):
 
 ```crystal
-if tokens = model.token_usage_for("Hello, world!")
+if tokens = model.token_count_for("Hello, world!")
   puts "Prompt tokens: #{tokens}"
 end
 ```
 
-You can also estimate token usage for instructions and tools configuration:
+You can also count tokens for the same typed tool list used to create a session:
 
 ```crystal
-if tokens = model.token_usage_for_tools("You are a helpful assistant.", tools_json)
+if tokens = model.token_count_for_tools("You are a helpful assistant.", tools)
   puts "System tokens: #{tokens}"
 end
 ```

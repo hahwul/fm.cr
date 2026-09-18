@@ -2,7 +2,15 @@
 
 ## Unreleased
 
+### Added
+- macOS 27 Foundation Models error mapping for unsupported capabilities, unsupported transcript content, and transcript mutation during a response
+- `SystemLanguageModel#token_count_for`, `#token_count_for_tools`, and `#context_size`; the existing `token_usage_*` methods remain as aliases
+- `ContextLimit.default_on_device(model)` to use the active model's runtime-reported context size instead of assuming 4096 tokens
+
 ### Fixed
+- Xcode 27 builds now use the finalized `SystemLanguageModel.tokenCount(for:)` and `GenerationOptions(samplingMode:)` APIs while retaining a macOS 26 deployment target
+- Tool token counting now uses the same normalized per-tool bridges as `Session`, so context estimates match the tools registered with the model
+- macOS 27 Foundation Models errors retain their typed Crystal exceptions instead of falling back to a generic `GenerationError`
 - `Generable` kept only the first non-nil variant of a nilable union, so `String | Int32 | Nil` was described as a bare integer and the schema rejected the string variant
 - `Fm::Guide` truncated fractional `minimum` / `maximum` bounds to integers, widening `minimum: 0.5` to `0` and narrowing `maximum: 9.5` to `9`
 - `Generable` described a `@[Flags]` enum as a string, but `JSON::Serializable` reads and writes it as an array of member names, so structured generation could never decode it; the synthesized `None` / `All` members were advertised as values too

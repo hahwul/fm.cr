@@ -5,23 +5,26 @@ module Fm
   # by `error_from_swift` / `error_from_stream` to convert raw codes into
   # typed Crystal exceptions.
   enum GenerationErrorCode
-    Unknown                     =  0
-    ModelNotAvailable           =  1
-    Generation                  =  2
-    Cancelled                   =  3
-    ToolCall                    =  4
-    InvalidInput                =  5
-    Timeout                     =  6
-    ExceededContextWindowSize   =  7
-    AssetsUnavailable           =  8
-    GuardrailViolation          =  9
-    UnsupportedGuide            = 10
-    UnsupportedLanguageOrLocale = 11
-    DecodingFailure             = 12
-    RateLimited                 = 13
-    ConcurrentRequests          = 14
-    Refusal                     = 15
-    InvalidGenerationSchema     = 16
+    Unknown                           =  0
+    ModelNotAvailable                 =  1
+    Generation                        =  2
+    Cancelled                         =  3
+    ToolCall                          =  4
+    InvalidInput                      =  5
+    Timeout                           =  6
+    ExceededContextWindowSize         =  7
+    AssetsUnavailable                 =  8
+    GuardrailViolation                =  9
+    UnsupportedGuide                  = 10
+    UnsupportedLanguageOrLocale       = 11
+    DecodingFailure                   = 12
+    RateLimited                       = 13
+    ConcurrentRequests                = 14
+    Refusal                           = 15
+    InvalidGenerationSchema           = 16
+    UnsupportedCapability             = 17
+    UnsupportedTranscriptContent      = 18
+    TranscriptMutationWhileResponding = 19
   end
 
   # Base error class for all FoundationModels errors.
@@ -103,6 +106,18 @@ module Fm
 
   # The provided generation schema is invalid.
   class InvalidGenerationSchemaError < GenerationError
+  end
+
+  # The selected language model doesn't support a requested capability.
+  class UnsupportedCapabilityError < GenerationError
+  end
+
+  # The prompt or transcript contains content the model cannot process.
+  class UnsupportedTranscriptContentError < GenerationError
+  end
+
+  # The session transcript was changed while a response was in progress.
+  class TranscriptMutationWhileRespondingError < GenerationError
   end
 
   # Operation timed out.
@@ -214,6 +229,10 @@ module Fm
     in .concurrent_requests?            then ConcurrentRequestsError.new(message)
     in .refusal?                        then RefusalError.new(message)
     in .invalid_generation_schema?      then InvalidGenerationSchemaError.new(message)
+    in .unsupported_capability?         then UnsupportedCapabilityError.new(message)
+    in .unsupported_transcript_content? then UnsupportedTranscriptContentError.new(message)
+    in .transcript_mutation_while_responding?
+      TranscriptMutationWhileRespondingError.new(message)
     end
   end
 

@@ -19,16 +19,19 @@ Exception
         ├── Fm::ModelNotReadyError
         ├── Fm::InvalidInputError
         ├── Fm::GenerationError
-        ├── Fm::ExceededContextWindowSizeError
-        ├── Fm::AssetsUnavailableError
-        ├── Fm::GuardrailViolationError
-        ├── Fm::UnsupportedGuideError
-        ├── Fm::UnsupportedLanguageOrLocaleError
-        ├── Fm::DecodingFailureError
-        ├── Fm::RateLimitedError
-        ├── Fm::ConcurrentRequestsError
-        ├── Fm::RefusalError
-        ├── Fm::InvalidGenerationSchemaError
+        │     ├── Fm::ExceededContextWindowSizeError
+        │     ├── Fm::AssetsUnavailableError
+        │     ├── Fm::GuardrailViolationError
+        │     ├── Fm::UnsupportedGuideError
+        │     ├── Fm::UnsupportedLanguageOrLocaleError
+        │     ├── Fm::DecodingFailureError
+        │     ├── Fm::RateLimitedError
+        │     ├── Fm::ConcurrentRequestsError
+        │     ├── Fm::RefusalError
+        │     ├── Fm::InvalidGenerationSchemaError
+        │     ├── Fm::UnsupportedCapabilityError
+        │     ├── Fm::UnsupportedTranscriptContentError
+        │     └── Fm::TranscriptMutationWhileRespondingError
         ├── Fm::TimeoutError
         ├── Fm::ToolCallError
         └── Fm::InternalError
@@ -56,6 +59,9 @@ Exception
 | `RateLimitedError` | Too many requests in a short time |
 | `ConcurrentRequestsError` | Multiple concurrent requests to the same session |
 | `RefusalError` | Model refused to generate a response |
+| `UnsupportedCapabilityError` | The selected model doesn't support a requested capability (macOS 27+) |
+| `UnsupportedTranscriptContentError` | The transcript contains content the model cannot process (macOS 27+) |
+| `TranscriptMutationWhileRespondingError` | The transcript changed while a response was in progress (macOS 27+) |
 
 ### Input/Schema Errors
 

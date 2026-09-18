@@ -198,10 +198,10 @@ when .model_not_ready?
 end
 ```
 
-### Token Usage (macOS 26.4+)
+### Token Counting (macOS 26.4+)
 
 ```crystal
-if tokens = model.token_usage_for("Hello, world!")
+if tokens = model.token_count_for("Hello, world!")
   puts "Prompt tokens: #{tokens}"
 end
 ```
@@ -227,7 +227,7 @@ session.prewarm("Tell me about")  # hint the model ahead of time
 Estimate context window usage and compact long conversations:
 
 ```crystal
-limit = Fm::ContextLimit.default_on_device  # 4096 tokens
+limit = Fm::ContextLimit.default_on_device(model)
 usage = Fm.context_usage_from_transcript(session.transcript_json, limit)
 
 puts "Utilization: #{(usage.utilization * 100).round(1)}%"
@@ -273,6 +273,9 @@ FoundationModels generation error cases:
 | `ConcurrentRequestsError` | Multiple concurrent requests on one session |
 | `RefusalError` | The model refused to generate a response |
 | `InvalidGenerationSchemaError` | The provided generation schema is invalid |
+| `UnsupportedCapabilityError` | The selected model does not support a requested capability (macOS 27+) |
+| `UnsupportedTranscriptContentError` | The transcript contains content the model cannot process (macOS 27+) |
+| `TranscriptMutationWhileRespondingError` | The transcript changed while a response was in progress (macOS 27+) |
 
 ```crystal
 begin
@@ -297,8 +300,12 @@ end
 | `#availability` | Detailed availability status |
 | `#ensure_available!` | Raises if not available |
 | `#wait_until_available(timeout)` | Blocks until available, raising `TimeoutError` on expiry |
-| `#token_usage_for(prompt)` | Token count for a prompt (macOS 26.4+, returns `nil` if unavailable) |
-| `#token_usage_for_tools(instructions, tools_json?)` | Token count for instructions + tools (macOS 26.4+) |
+| `#token_count_for(prompt)` | Token count for a prompt (macOS 26.4+, returns `nil` if unavailable) |
+| `#token_count_for_tools(instructions, tools)` | Combined token count for instructions + typed tools (macOS 26.4+) |
+| `#token_count_for_tools(instructions, tools_json?)` | Low-level JSON overload for combined token counting (macOS 26.4+) |
+| `#context_size` | Maximum model context size in tokens (macOS 26+ with SDK 26.4+, returns `nil` if unavailable) |
+| `#token_usage_for(...)` | Backward-compatible alias for `#token_count_for` |
+| `#token_usage_for_tools(...)` | Backward-compatible alias for `#token_count_for_tools` |
 
 ### `Fm::Session`
 
@@ -374,9 +381,9 @@ xcode-select -p
 
 Apple Intelligence must be enabled on your Mac, and the device must support it (Apple Silicon). Check **System Settings > Apple Intelligence & Siri** to enable it.
 
-### Token usage returns `nil`
+### Token counting returns `nil`
 
-The `token_usage_for` API requires **macOS 26.4+** (SDK version 26.4 or later). On older versions, it returns `nil` by design.
+The `token_count_for` API requires **macOS 26.4+** (SDK version 26.4 or later). On older versions, it returns `nil` by design. The legacy `token_usage_for` alias behaves the same way.
 
 ## Contributing
 

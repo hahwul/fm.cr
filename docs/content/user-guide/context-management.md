@@ -39,7 +39,7 @@ puts text
 Monitor how much of the context window is consumed:
 
 ```crystal
-limit = Fm::ContextLimit.default_on_device  # 4096 tokens
+limit = Fm::ContextLimit.default_on_device(model)
 usage = Fm.context_usage_from_transcript(session.transcript_json, limit)
 
 puts "Estimated tokens: #{usage.estimated_tokens}"
@@ -53,8 +53,8 @@ puts "Over limit: #{usage.over_limit?}"
 Configure the context window parameters:
 
 ```crystal
-# Default on-device limit (4096 tokens)
-limit = Fm::ContextLimit.default_on_device
+# Read the active model's context size (macOS 26+ with SDK 26.4+; 4096 fallback)
+limit = Fm::ContextLimit.default_on_device(model)
 
 # Custom limit
 limit = Fm::ContextLimit.new(
@@ -82,7 +82,7 @@ The `ContextUsage` struct provides these fields:
 When a conversation gets too long, compact it by summarizing earlier messages and starting a fresh session:
 
 ```crystal
-limit = Fm::ContextLimit.default_on_device
+limit = Fm::ContextLimit.default_on_device(model)
 
 if result = Fm.compact_session_if_needed(model, session, limit, base_instructions: "Be helpful.")
   session = result.session

@@ -106,6 +106,6 @@ xcode-select -p
 
 Apple Intelligence must be enabled on your Mac, and the device must have Apple Silicon. Check **System Settings > Apple Intelligence & Siri**.
 
-### Token usage returns `nil`
+### Token counting returns `nil`
 
-The `token_usage_for` API requires **macOS 26.4+**. On older versions, it returns `nil` by design.
+The `token_count_for` API requires **macOS 26.4+**. On older versions, it returns `nil` by design. The legacy `token_usage_for` alias behaves the same way.

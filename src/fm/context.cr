@@ -1,7 +1,8 @@
 require "json"
 
 module Fm
-  # Default context window size for Apple's on-device Foundation Models.
+  # Conservative fallback context window size used when the runtime cannot
+  # report the active model's actual context size.
   DEFAULT_CONTEXT_TOKENS = 4096
 
   # Configuration for estimating context usage.
@@ -26,6 +27,24 @@ module Fm
     def self.default_on_device : self
       new(
         max_tokens: DEFAULT_CONTEXT_TOKENS,
+        reserved_response_tokens: 512,
+        chars_per_token: 4
+      )
+    end
+
+    # Creates a configuration using the active model's actual context size.
+    # Falls back to `DEFAULT_CONTEXT_TOKENS` when the runtime API is unavailable
+    # or returns a value outside the range supported by `ContextLimit`.
+    def self.default_on_device(model : SystemLanguageModel) : self
+      reported_size = model.context_size
+      max_tokens = if reported_size && reported_size > 0 && reported_size <= Int32::MAX
+                     reported_size.to_i32
+                   else
+                     DEFAULT_CONTEXT_TOKENS
+                   end
+
+      new(
+        max_tokens: max_tokens,
         reserved_response_tokens: 512,
         chars_per_token: 4
       )

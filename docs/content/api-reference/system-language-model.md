@@ -6,7 +6,7 @@ weight = 1
 
 ## Overview
 
-`Fm::SystemLanguageModel` represents Apple's on-device foundation model. It provides methods to check availability, create sessions, and estimate token usage.
+`Fm::SystemLanguageModel` represents Apple's on-device foundation model. It provides methods to check availability, create sessions, count tokens, and inspect the context window size.
 
 ## Constructor
 
@@ -87,28 +87,47 @@ rescue ex : Fm::TimeoutError
 end
 ```
 
-### `#token_usage_for`
+### `#token_count_for`
 
 ```crystal
-model.token_usage_for(prompt : String) : Int64?
+model.token_count_for(prompt : String) : Int64?
 ```
 
-Returns the estimated token count for a prompt string, or `nil` if the API is unavailable.
+Returns the token count for a prompt string, or `nil` if the API is unavailable.
 
 > Requires macOS 26.4+. Returns `nil` on older versions.
 
-### `#token_usage_for_tools`
+`#token_usage_for` remains available as a backward-compatible alias.
+
+### `#token_count_for_tools`
 
 ```crystal
-model.token_usage_for_tools(
+model.token_count_for_tools(
+  instructions : String,
+  tools : Array(Fm::Tool)
+) : Int64?
+
+model.token_count_for_tools(
   instructions : String,
   tools_json : String? = nil
 ) : Int64?
 ```
 
-Returns the estimated token count for instructions and tool definitions combined, or `nil` if the API is unavailable.
+Returns the token count for instructions and tool definitions combined, or `nil` if the API is unavailable. Prefer the typed `Array(Fm::Tool)` overload; it uses the same normalized tool representation as `Fm::Session`. The JSON overload is available for low-level integrations and backward compatibility.
 
 > Requires macOS 26.4+. Returns `nil` on older versions.
+
+`#token_usage_for_tools` remains available as a backward-compatible alias.
+
+### `#context_size`
+
+```crystal
+model.context_size : Int64?
+```
+
+Returns the maximum context window size in tokens, or `nil` if the API is unavailable.
+
+> Available on macOS 26+ when the native extension is built with SDK 26.4 or later. Builds using an older SDK return `nil`.
 
 ## Enums
 

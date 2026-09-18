@@ -46,9 +46,8 @@ module Fm
   # )
   # ```
   class SystemLanguageModel
-    # Sentinel returned by the Swift `fm_model_token_usage_*` FFI functions when
-    # the underlying token-counting API is unavailable on the current OS (it
-    # requires macOS 26.4+ at runtime). Surfaced to callers as `nil`.
+    # Sentinel returned by the Swift token-count/context-size FFI functions when
+    # the underlying API is unavailable. Surfaced to callers as `nil`.
     TOKEN_USAGE_UNAVAILABLE = -2_i64
 
     @ptr : Void*
@@ -124,17 +123,17 @@ module Fm
       end
     end
 
-    # Returns the token usage for a given prompt string.
+    # Returns the token count for a given prompt string.
     #
     # Requires macOS 26.4+ at runtime. Returns `nil` if the API is
     # unavailable on the current OS version.
     #
     # ```
-    # if tokens = model.token_usage_for("Hello, world!")
+    # if tokens = model.token_count_for("Hello, world!")
     #   puts "Tokens: #{tokens}"
     # end
     # ```
-    def token_usage_for(prompt : String) : Int64?
+    def token_count_for(prompt : String) : Int64?
       error = Fm.make_error_ptr
 
       result = LibFmFfi.fm_model_token_usage_for(@ptr, prompt.to_unsafe, error)
@@ -144,17 +143,22 @@ module Fm
       result == TOKEN_USAGE_UNAVAILABLE ? nil : result
     end
 
-    # Returns the token usage for instructions and tools configuration.
+    # Backward-compatible alias for `#token_count_for`.
+    def token_usage_for(prompt : String) : Int64?
+      token_count_for(prompt)
+    end
+
+    # Returns the combined token count for instructions and tools configuration.
     #
     # Requires macOS 26.4+ at runtime. Returns `nil` if the API is
     # unavailable on the current OS version.
     #
     # ```
-    # if tokens = model.token_usage_for_tools("Be helpful.", tools_json)
+    # if tokens = model.token_count_for_tools("Be helpful.", tools_json)
     #   puts "Tokens: #{tokens}"
     # end
     # ```
-    def token_usage_for_tools(instructions : String, tools_json : String? = nil) : Int64?
+    def token_count_for_tools(instructions : String, tools_json : String? = nil) : Int64?
       error = Fm.make_error_ptr
 
       tools_ptr = tools_json ? tools_json.to_unsafe : Pointer(LibC::Char).null
@@ -168,6 +172,36 @@ module Fm
 
       Fm.check_error!(error.value)
 
+      result == TOKEN_USAGE_UNAVAILABLE ? nil : result
+    end
+
+    # Returns the combined token count for instructions and typed tools.
+    # Tools are serialized through the same normalized representation used by
+    # `Session`, so the count matches the tools the model receives.
+    def token_count_for_tools(instructions : String, tools : Array(Tool)) : Int64?
+      token_count_for_tools(instructions, Tool.tools_to_json(tools))
+    end
+
+    # Backward-compatible alias for `#token_count_for_tools`.
+    def token_usage_for_tools(instructions : String, tools_json : String? = nil) : Int64?
+      token_count_for_tools(instructions, tools_json)
+    end
+
+    # Backward-compatible typed alias for `#token_count_for_tools`.
+    def token_usage_for_tools(instructions : String, tools : Array(Tool)) : Int64?
+      token_count_for_tools(instructions, tools)
+    end
+
+    # Returns the model's maximum context window size in tokens.
+    #
+    # Available on macOS 26+ when the native extension is built with the macOS
+    # 26.4 SDK or later. Returns `nil` when built with an older SDK.
+    #
+    # ```
+    # puts "Context size: #{model.context_size}" if model.context_size
+    # ```
+    def context_size : Int64?
+      result = LibFmFfi.fm_model_context_size(@ptr)
       result == TOKEN_USAGE_UNAVAILABLE ? nil : result
     end
 
