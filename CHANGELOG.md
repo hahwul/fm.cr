@@ -1,34 +1,31 @@
 # Changelog
 
-## Unreleased
+## v0.4.0
 
 ### Added
-- `Fm::GenerationOptions#tool_calling_mode` (`Fm::ToolCallingMode`) to allow, require, or disallow tool calls on macOS 27
-- `Fm::ContextOptions` — schema-in-prompt control and `Fm::ReasoningLevel` (`.light` / `.moderate` / `.deep` / `.custom`) — accepted as `context_options:` by every `Session` request method on macOS 27
-- `Fm::Usage` with per-response token counts on `Fm::Response#usage`, plus `Session#usage` (cumulative) and `Session#last_usage` (latest blocking, structured, or streamed response); all `nil` before macOS 27
-- macOS 27 Foundation Models error mapping for unsupported capabilities, unsupported transcript content, and transcript mutation during a response
-- `SystemLanguageModel#token_count_for`, `#token_count_for_tools`, and `#context_size`; the existing `token_usage_*` methods remain as aliases
-- Exact transcript token counting through `SystemLanguageModel#token_count_for(Transcript)` and a model-aware `Fm.context_usage_from_transcript` overload
-- `ContextLimit.default_on_device(model)` to use the active model's runtime-reported context size instead of assuming 4096 tokens
+- macOS 27 Foundation Models surfaces: `GenerationOptions#tool_calling_mode`, `Fm::ContextOptions` (schema-in-prompt control and `Fm::ReasoningLevel`) accepted as `context_options:` by every `Session` request method, and `Fm::Usage` token counts on `Fm::Response#usage` with `Session#usage` / `Session#last_usage`
+- `Fm::Schema` normalizer that emits schemas the native `GenerationSchema` decoder accepts, so structured output and per-tool registration no longer silently fall back to prompt-based JSON and the generic tool bridge
+- `Fm::Transcript` as a first-class object (`Session#transcript`, `Session#from_transcript`) and `GenerationErrorCode` replacing magic numbers in error mapping
+- `CancelledError`, `UnsupportedSchemaTypeError`, and macOS 27 errors for unsupported capabilities, unsupported transcript content, and transcript mutation during a response
+- `SystemLanguageModel#token_count_for`, `#token_count_for_tools`, `#context_size` (the `token_usage_*` names remain as aliases), exact transcript token counting, and `ContextLimit.default_on_device(model)` for the model's runtime-reported context size
+- Ameba lint baseline and a CI format check
 
 ### Fixed
-- `UnsupportedTranscriptContentError#unsupported_content` now carries the offending transcript entries as encoded JSON instead of Swift `String(describing:)` output, so the rejected entry stays inspectable
-- macOS 27 associated error details (such as context/token counts and rate-limit reset dates) now survive both blocking and streaming FFI paths and are available through typed accessors
-- Automatic context compaction now uses FoundationModels' native transcript token count on macOS 26.4+ instead of always relying on a character-count estimate
-- Xcode 27 builds now use the finalized `SystemLanguageModel.tokenCount(for:)` and `GenerationOptions(samplingMode:)` APIs while retaining a macOS 26 deployment target
-- Tool token counting now uses the same normalized per-tool bridges as `Session`, so context estimates match the tools registered with the model
-- macOS 27 Foundation Models errors retain their typed Crystal exceptions instead of falling back to a generic `GenerationError`
-- `Generable` kept only the first non-nil variant of a nilable union, so `String | Int32 | Nil` was described as a bare integer and the schema rejected the string variant
-- `Fm::Guide` truncated fractional `minimum` / `maximum` bounds to integers, widening `minimum: 0.5` to `0` and narrowing `maximum: 9.5` to `9`
-- `Generable` described a `@[Flags]` enum as a string, but `JSON::Serializable` reads and writes it as an array of member names, so structured generation could never decode it; the synthesized `None` / `All` members were advertised as values too
-- Only the last of several stacked `Fm::Guide` annotations on a field was applied, silently discarding the rest
-- `Session#respond(timeout:)` and `SystemLanguageModel#wait_until_available` truncated sub-millisecond timeouts to `0`, which means "no timeout" — a tiny timeout became an unbounded wait — and raised a bare `OverflowError` for negative spans
-- Transcript text nested under a `content` / `text` key (how FoundationModels represents multi-segment content) was dropped from text extraction, under-counting tokens and feeding compaction a transcript with the conversation missing
-- An exception raised in a `Session#stream` block unwound into the Swift frame holding the FFI semaphore, aborting the process instead of surfacing at the call site; `tool_callback` had the same exposure outside its inner rescue
-- A `seed` set without a sampling mode was serialized outside the `sampling` object, where the Swift decoder never read it, so requested reproducibility was silently dropped
-- `Transcript` could not be embedded in an enclosing JSON document — no `to_json(JSON::Builder)` overload existed — despite exposing `to_json` / `from_json`
-- Streaming deltas were computed from a `Character` count, so a snapshot extending the last grapheme (combining accents, ZWJ emoji sequences) emitted duplicated or missing characters
-- `ext/Makefile` hardcoded an `arm64` target, producing an unlinkable archive on x86_64 hosts, and printed a shell error when `xcrun` was unavailable
+- `Generable`: nilable unions kept only the first non-nil variant, `@[Flags]` enums were described as strings instead of arrays, and only the last of several stacked `Fm::Guide` annotations was applied
+- `Fm::Guide` truncated fractional `minimum` / `maximum` bounds to integers
+- `Session#respond(timeout:)` and `SystemLanguageModel#wait_until_available` turned sub-millisecond timeouts into "no timeout" and raised a bare `OverflowError` for negative spans
+- An exception in a `Session#stream` block or `tool_callback` unwound into the Swift frame and aborted the process
+- A `seed` without a sampling mode was serialized where the Swift decoder never read it, silently dropping reproducibility
+- Transcript text nested under `content` / `text` was dropped, under-counting tokens and feeding compaction a transcript with the conversation missing; `Transcript` also gained a `to_json(JSON::Builder)` overload
+- Streaming deltas were computed per `Character`, duplicating or dropping grapheme-extending sequences (combining accents, ZWJ emoji)
+- macOS 27 error details survive both blocking and streaming FFI paths and keep their typed Crystal exceptions; `UnsupportedTranscriptContentError#unsupported_content` now carries the rejected entries as encoded JSON
+- `ext/Makefile` hardcoded an `arm64` target and printed a shell error when `xcrun` was unavailable
+
+### Changed
+- Requires Crystal >= 1.21.0
+- Automatic context compaction uses FoundationModels' native transcript token count on macOS 26.4+ instead of a character estimate
+- Xcode 27 builds use the finalized `SystemLanguageModel.tokenCount(for:)` and `GenerationOptions(samplingMode:)` APIs while keeping a macOS 26 deployment target
+- Documentation site redesigned on the shared ecosystem design system
 
 ## v0.3.0
 
