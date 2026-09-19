@@ -148,6 +148,30 @@ module Fm
       token_count_for(prompt)
     end
 
+    # Returns the token count for a complete session transcript.
+    #
+    # Unlike counting extracted transcript text, this includes the native
+    # representation of every transcript entry. Requires macOS 26.4+ at
+    # runtime and returns `nil` when the API is unavailable.
+    def token_count_for(transcript : Transcript) : Int64?
+      error = Fm.make_error_ptr
+
+      result = LibFmFfi.fm_model_token_usage_for_transcript(
+        @ptr,
+        transcript.json.to_unsafe,
+        error
+      )
+
+      Fm.check_error!(error.value)
+
+      result == TOKEN_USAGE_UNAVAILABLE ? nil : result
+    end
+
+    # Backward-compatible alias for `#token_count_for(Transcript)`.
+    def token_usage_for(transcript : Transcript) : Int64?
+      token_count_for(transcript)
+    end
+
     # Returns the combined token count for instructions and tools configuration.
     #
     # Requires macOS 26.4+ at runtime. Returns `nil` if the API is

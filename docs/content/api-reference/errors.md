@@ -86,6 +86,28 @@ Exception
 | `tool_name` | `String` | Name of the tool that failed |
 | `arguments_json` | `String?` | JSON string of the arguments passed to the tool |
 
+### Structured Details
+
+Every `Fm::Error` has an optional `details : JSON::Any?` property. When an
+error raised by macOS 27 includes associated diagnostic information, fm.cr
+preserves it for both blocking and streaming calls. Older SDKs and errors
+without associated information return `nil`.
+
+Common fields also have typed accessors:
+
+| Error | Property | Type |
+|-------|----------|------|
+| `ExceededContextWindowSizeError` | `context_size`, `token_count` | `Int64?` |
+| `RateLimitedError` | `reset_date` | `Time?` |
+| `UnsupportedGuideError` | `schema_name` | `String?` |
+| `UnsupportedLanguageOrLocaleError` | `language_code` | `String?` |
+| `UnsupportedCapabilityError` | `capability` | `String?` |
+| `UnsupportedTranscriptContentError` | `unsupported_content` | `Array(JSON::Any)?` |
+| `DecodingFailureError` | `raw_content`, `underlying_error_message` | `String?` |
+
+The generic `details` object also contains `version`, `debugDescription`, and
+stringified FoundationModels `metadata` when the framework supplies them.
+
 ### Other Errors
 
 | Error | Description |
@@ -98,6 +120,8 @@ Exception
 ```crystal
 begin
   response = session.respond("Hello")
+rescue ex : Fm::ExceededContextWindowSizeError
+  puts "Used #{ex.token_count} of #{ex.context_size} tokens"
 rescue ex : Fm::TimeoutError
   puts "Timed out: #{ex.message}"
 rescue ex : Fm::ToolCallError

@@ -40,13 +40,18 @@ Monitor how much of the context window is consumed:
 
 ```crystal
 limit = Fm::ContextLimit.default_on_device(model)
-usage = Fm.context_usage_from_transcript(session.transcript_json, limit)
+usage = Fm.context_usage_from_transcript(model, session.transcript, limit)
 
 puts "Estimated tokens: #{usage.estimated_tokens}"
 puts "Available tokens: #{usage.available_tokens}"
 puts "Utilization: #{(usage.utilization * 100).round(1)}%"
 puts "Over limit: #{usage.over_limit?}"
 ```
+
+Passing the model and `Transcript` uses FoundationModels' exact transcript
+tokenizer on macOS 26.4+. If that API is unavailable, fm.cr automatically
+falls back to its character-based estimate. The two-argument overload remains
+available when only transcript JSON is available.
 
 ### ContextLimit
 

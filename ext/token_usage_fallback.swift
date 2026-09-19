@@ -13,6 +13,19 @@ public func fm_model_token_usage_for(
     return tokenUsageUnavailableSentinel
 }
 
+/// Returns a sentinel so Crystal can report that transcript token counting is unavailable.
+@_cdecl("fm_model_token_usage_for_transcript")
+public func fm_model_token_usage_for_transcript(
+    _ modelPtr: UnsafeMutableRawPointer,
+    _ transcriptJson: UnsafePointer<CChar>,
+    _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
+) -> Int64 {
+    _ = modelPtr
+    _ = transcriptJson
+    _ = errorOut
+    return tokenUsageUnavailableSentinel
+}
+
 /// Returns a sentinel so Crystal can report that token counting is unavailable.
 @_cdecl("fm_model_token_usage_for_tools")
 public func fm_model_token_usage_for_tools(

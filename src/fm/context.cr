@@ -87,10 +87,29 @@ module Fm
     context_usage_from_transcript(transcript.json, limit)
   end
 
+  # Computes transcript usage with the model's native tokenizer when available,
+  # falling back to the character heuristic on older runtimes.
+  def self.context_usage_from_transcript(
+    model : SystemLanguageModel,
+    transcript : Transcript,
+    limit : ContextLimit,
+  ) : ContextUsage
+    if token_count = model.token_count_for(transcript)
+      return context_usage_for_token_count(token_count, limit)
+    end
+
+    context_usage_from_transcript(transcript, limit)
+  end
+
   # Estimates token usage from transcript JSON and a context limit.
   def self.context_usage_from_transcript(transcript_json : String, limit : ContextLimit) : ContextUsage
     transcript_text = transcript_to_text(transcript_json)
     estimated_tokens = estimate_tokens(transcript_text, limit.chars_per_token)
+    context_usage_for_token_count(estimated_tokens.to_i64, limit)
+  end
+
+  private def self.context_usage_for_token_count(token_count : Int64, limit : ContextLimit) : ContextUsage
+    estimated_tokens = token_count.clamp(0_i64, Int32::MAX.to_i64).to_i32
     available_tokens = {limit.max_tokens - limit.reserved_response_tokens, 0}.max
     utilization = limit.max_tokens > 0 ? estimated_tokens.to_f32 / limit.max_tokens : 0.0_f32
     over_limit = estimated_tokens > available_tokens
@@ -194,7 +213,8 @@ module Fm
     base_instructions : String? = nil,
   ) : CompactedSession?
     transcript_json = session.transcript_json
-    usage = context_usage_from_transcript(transcript_json, limit)
+    transcript = Transcript.new(transcript_json)
+    usage = context_usage_from_transcript(model, transcript, limit)
     return unless usage.over_limit?
 
     summary = compact_transcript(model, transcript_json, config)

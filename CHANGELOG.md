@@ -5,9 +5,12 @@
 ### Added
 - macOS 27 Foundation Models error mapping for unsupported capabilities, unsupported transcript content, and transcript mutation during a response
 - `SystemLanguageModel#token_count_for`, `#token_count_for_tools`, and `#context_size`; the existing `token_usage_*` methods remain as aliases
+- Exact transcript token counting through `SystemLanguageModel#token_count_for(Transcript)` and a model-aware `Fm.context_usage_from_transcript` overload
 - `ContextLimit.default_on_device(model)` to use the active model's runtime-reported context size instead of assuming 4096 tokens
 
 ### Fixed
+- macOS 27 associated error details (such as context/token counts and rate-limit reset dates) now survive both blocking and streaming FFI paths and are available through typed accessors
+- Automatic context compaction now uses FoundationModels' native transcript token count on macOS 26.4+ instead of always relying on a character-count estimate
 - Xcode 27 builds now use the finalized `SystemLanguageModel.tokenCount(for:)` and `GenerationOptions(samplingMode:)` APIs while retaining a macOS 26 deployment target
 - Tool token counting now uses the same normalized per-tool bridges as `Session`, so context estimates match the tools registered with the model
 - macOS 27 Foundation Models errors retain their typed Crystal exceptions instead of falling back to a generic `GenerationError`

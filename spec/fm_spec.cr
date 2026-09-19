@@ -465,6 +465,12 @@ describe Fm do
       err.message.should eq "generation failed"
     end
 
+    it "preserves Exception's cause initializer contract" do
+      cause = IO::Error.new("root cause")
+      err = Fm::GenerationError.new("generation failed", cause: cause)
+      err.cause.should be cause
+    end
+
     it "creates TimeoutError" do
       err = Fm::TimeoutError.new("timed out")
       err.message.should eq "timed out"
@@ -1548,6 +1554,78 @@ describe Fm do
       end
     end
 
+    it "preserves context-size details from macOS 27" do
+      details = %({"version":1,"debugDescription":"context full","metadata":{"request":"abc"},"contextSize":8192,"tokenCount":9000})
+      err = Fm.error_from_stream(
+        Fm::GenerationErrorCode::ExceededContextWindowSize.value,
+        "too long",
+        details
+      ).as(Fm::ExceededContextWindowSizeError)
+
+      err.context_size.should eq 8192
+      err.token_count.should eq 9000
+      err.details.not_nil!["metadata"]["request"].as_s.should eq "abc"
+    end
+
+    it "exposes typed macOS 27 error details" do
+      rate_limited = Fm.error_from_stream(
+        Fm::GenerationErrorCode::RateLimited.value,
+        "slow down",
+        %({"version":1,"resetDate":"2026-09-19T12:34:56Z"})
+      ).as(Fm::RateLimitedError)
+      rate_limited.reset_date.should eq Time.utc(2026, 9, 19, 12, 34, 56)
+
+      capability = Fm.error_from_stream(
+        Fm::GenerationErrorCode::UnsupportedCapability.value,
+        "unsupported",
+        %({"version":1,"capability":"guardrails"})
+      ).as(Fm::UnsupportedCapabilityError)
+      capability.capability.should eq "guardrails"
+
+      guide = Fm.error_from_stream(
+        Fm::GenerationErrorCode::UnsupportedGuide.value,
+        "unsupported",
+        %({"version":1,"schemaName":"Recipe"})
+      ).as(Fm::UnsupportedGuideError)
+      guide.schema_name.should eq "Recipe"
+
+      language = Fm.error_from_stream(
+        Fm::GenerationErrorCode::UnsupportedLanguageOrLocale.value,
+        "unsupported",
+        %({"version":1,"languageCode":"ko-KR"})
+      ).as(Fm::UnsupportedLanguageOrLocaleError)
+      language.language_code.should eq "ko-KR"
+    end
+
+    it "exposes decoding and transcript details" do
+      decoding = Fm.error_from_stream(
+        Fm::GenerationErrorCode::DecodingFailure.value,
+        "decode failed",
+        %({"version":1,"rawContent":"{bad","underlyingError":"Unexpected token"})
+      ).as(Fm::DecodingFailureError)
+      decoding.raw_content.should eq "{bad"
+      decoding.underlying_error_message.should eq "Unexpected token"
+
+      transcript = Fm.error_from_stream(
+        Fm::GenerationErrorCode::UnsupportedTranscriptContent.value,
+        "unsupported",
+        %({"version":1,"unsupportedContent":["toolCall(name: foo)"]})
+      ).as(Fm::UnsupportedTranscriptContentError)
+      transcript.unsupported_content.not_nil!.map(&.as_s).should eq ["toolCall(name: foo)"]
+    end
+
+    it "does not mask the original error when details JSON is malformed" do
+      err = Fm.error_from_stream(
+        Fm::GenerationErrorCode::RateLimited.value,
+        "slow down",
+        "{not json"
+      )
+
+      err.should be_a(Fm::RateLimitedError)
+      err.message.should eq "slow down"
+      err.details.should be_nil
+    end
+
     it "maps generation to GenerationError" do
       err = Fm.error_from_stream(Fm::GenerationErrorCode::Generation.value, "generation error")
       err.is_a?(Fm::GenerationError).should be_true
@@ -1808,6 +1886,19 @@ describe Fm do
       state.error_code = 6
       state.error.should eq "something failed"
       state.error_code.should eq 6
+    end
+
+    it "raises a recorded error with structured details" do
+      state = Fm::Session::StreamState.new(->(_s : String) { })
+      state.error = "too long"
+      state.error_code = Fm::GenerationErrorCode::ExceededContextWindowSize.value
+      state.error_details_json = %({"version":1,"contextSize":8192,"tokenCount":9000})
+
+      error = expect_raises(Fm::ExceededContextWindowSizeError) do
+        state.raise_if_error!
+      end
+      error.context_size.should eq 8192
+      error.token_count.should eq 9000
     end
 
     it "raises recorded error" do
