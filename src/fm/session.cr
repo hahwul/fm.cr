@@ -218,7 +218,7 @@ module Fm
         boxed,
         ->Session.on_chunk(Void*, LibC::Char*),
         ->Session.on_done(Void*),
-        ->Session.on_error(Void*, Int32, LibC::Char*)
+        ->Session.on_error(Void*, Int32, LibC::Char*, LibC::Char*)
       )
 
       state.raise_if_error!
@@ -325,7 +325,7 @@ module Fm
         boxed,
         ->Session.on_chunk(Void*, LibC::Char*),
         ->Session.on_done(Void*),
-        ->Session.on_error(Void*, Int32, LibC::Char*)
+        ->Session.on_error(Void*, Int32, LibC::Char*, LibC::Char*)
       )
 
       state.raise_if_error!
@@ -389,6 +389,7 @@ module Fm
     class StreamState
       property error : String?
       property error_code : Int32 = 0
+      property error_details_json : String?
       getter on_chunk : String ->
 
       # An exception raised by the caller's block. Stored as the original
@@ -443,7 +444,7 @@ module Fm
         end
 
         if err = @error
-          raise Fm.error_from_stream(@error_code, err)
+          raise Fm.error_from_stream(@error_code, err, @error_details_json)
         end
       end
     end
@@ -465,12 +466,18 @@ module Fm
     end
 
     # :nodoc:
-    protected def self.on_error(user_data : Void*, code : Int32, message : LibC::Char*) : Nil
+    protected def self.on_error(
+      user_data : Void*,
+      code : Int32,
+      message : LibC::Char*,
+      details_json : LibC::Char*,
+    ) : Nil
       return if user_data.null?
       state = Box(StreamState).unbox(user_data)
       msg = message.null? ? "Streaming error (no message)" : String.new(message)
       state.error = msg
       state.error_code = code
+      state.error_details_json = String.new(details_json) unless details_json.null?
     rescue
       # Must not raise into the Swift caller; see `on_chunk`.
       nil

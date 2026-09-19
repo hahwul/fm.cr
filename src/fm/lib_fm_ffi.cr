@@ -40,7 +40,7 @@ module Fm
     # Callback types
     alias ChunkCallback = (Void*, LibC::Char*) -> Void
     alias DoneCallback = (Void*) -> Void
-    alias ErrorCallback = (Void*, Int32, LibC::Char*) -> Void
+    alias ErrorCallback = (Void*, Int32, LibC::Char*, LibC::Char*) -> Void
     alias ToolCallback = (Void*, LibC::Char*, LibC::Char*) -> LibC::Char*
 
     # -- Error functions --
@@ -49,6 +49,7 @@ module Fm
     fun fm_error_message(error : Void*) : LibC::Char*
     fun fm_error_tool_name(error : Void*) : LibC::Char*
     fun fm_error_tool_arguments(error : Void*) : LibC::Char*
+    fun fm_error_details_json(error : Void*) : LibC::Char*
     fun fm_error_free(error : Void*) : Void
 
     # -- Model functions --
@@ -62,6 +63,7 @@ module Fm
 
     # Token usage
     fun fm_model_token_usage_for(model : Void*, prompt : LibC::Char*, error_out : Void**) : Int64
+    fun fm_model_token_usage_for_transcript(model : Void*, transcript_json : LibC::Char*, error_out : Void**) : Int64
     fun fm_model_token_usage_for_tools(model : Void*, instructions : LibC::Char*, tools_json : LibC::Char*, error_out : Void**) : Int64
     fun fm_model_context_size(model : Void*) : Int64
 

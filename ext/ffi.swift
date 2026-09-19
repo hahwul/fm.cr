@@ -45,6 +45,13 @@ typealias ToolCallbackFn = @convention(c) (
     UnsafePointer<CChar>?
 ) -> UnsafeMutablePointer<CChar>?
 
+public typealias StreamErrorCallbackFn = @convention(c) (
+    UnsafeMutableRawPointer?,
+    Int32,
+    UnsafePointer<CChar>?,
+    UnsafePointer<CChar>?
+) -> Void
+
 // MARK: - Error Handling
 
 /// Error info container for FFI
@@ -53,12 +60,20 @@ private final class ErrorInfo: @unchecked Sendable {
     let code: Int32
     var toolName: String?
     var toolArguments: String?
+    var detailsJSON: String?
 
-    init(message: String, code: Int32, toolName: String? = nil, toolArguments: String? = nil) {
+    init(
+        message: String,
+        code: Int32,
+        toolName: String? = nil,
+        toolArguments: String? = nil,
+        detailsJSON: String? = nil
+    ) {
         self.message = message
         self.code = code
         self.toolName = toolName
         self.toolArguments = toolArguments
+        self.detailsJSON = detailsJSON
     }
 }
 
@@ -92,6 +107,14 @@ public func fm_error_tool_arguments(_ errorPtr: UnsafeMutableRawPointer) -> Unsa
     return (args as NSString).utf8String
 }
 
+/// Gets structured error details as JSON (may be null).
+@_cdecl("fm_error_details_json")
+public func fm_error_details_json(_ errorPtr: UnsafeMutableRawPointer) -> UnsafePointer<CChar>? {
+    let errorInfo = Unmanaged<AnyObject>.fromOpaque(errorPtr).takeUnretainedValue() as! ErrorInfo
+    guard let detailsJSON = errorInfo.detailsJSON else { return nil }
+    return (detailsJSON as NSString).utf8String
+}
+
 /// Frees an error object.
 @_cdecl("fm_error_free")
 public func fm_error_free(_ errorPtr: UnsafeMutableRawPointer?) {
@@ -100,8 +123,20 @@ public func fm_error_free(_ errorPtr: UnsafeMutableRawPointer?) {
 }
 
 /// Creates an error object.
-private func createError(_ message: String, code: FFIErrorCode, toolName: String? = nil, toolArguments: String? = nil) -> UnsafeMutableRawPointer {
-    let errorInfo = ErrorInfo(message: message, code: code.rawValue, toolName: toolName, toolArguments: toolArguments)
+private func createError(
+    _ message: String,
+    code: FFIErrorCode,
+    toolName: String? = nil,
+    toolArguments: String? = nil,
+    detailsJSON: String? = nil
+) -> UnsafeMutableRawPointer {
+    let errorInfo = ErrorInfo(
+        message: message,
+        code: code.rawValue,
+        toolName: toolName,
+        toolArguments: toolArguments,
+        detailsJSON: detailsJSON
+    )
     return Unmanaged.passRetained(errorInfo as AnyObject).toOpaque()
 }
 
@@ -116,8 +151,8 @@ private func createErrorFromException(_ error: Error, defaultCode: FFIErrorCode 
         )
     } else if let timeoutError = error as? TimeoutError {
         return createError(timeoutError.message, code: .timeout)
-    } else if let (code, message) = mapFoundationModelsError(error) {
-        return createError(message, code: code)
+    } else if let (code, message, detailsJSON) = mapFoundationModelsError(error) {
+        return createError(message, code: code, detailsJSON: detailsJSON)
     } else {
         return createError(error.localizedDescription, code: defaultCode)
     }
@@ -126,7 +161,7 @@ private func createErrorFromException(_ error: Error, defaultCode: FFIErrorCode 
 /// Maps errors from both the macOS 26 and macOS 27 FoundationModels error
 /// hierarchies. Apps compiled with Xcode 27 receive the new, split error
 /// types even when they keep macOS 26 as their deployment target.
-private func mapFoundationModelsError(_ error: Error) -> (FFIErrorCode, String)? {
+private func mapFoundationModelsError(_ error: Error) -> (FFIErrorCode, String, String?)? {
 #if compiler(>=6.4)
     if #available(macOS 27.0, *) {
         if let modelError = error as? LanguageModelError {
@@ -134,60 +169,173 @@ private func mapFoundationModelsError(_ error: Error) -> (FFIErrorCode, String)?
         }
         if let systemError = error as? SystemLanguageModel.Error {
             switch systemError {
-            case .assetsUnavailable:
-                return (.assetsUnavailable, systemError.localizedDescription)
+            case .assetsUnavailable(let details):
+                return (
+                    .assetsUnavailable,
+                    systemError.localizedDescription,
+                    errorDetailsJSON(debugDescription: details.debugDescription)
+                )
             @unknown default:
-                return (.generationFailed, systemError.localizedDescription)
+                return (.generationFailed, systemError.localizedDescription, nil)
             }
         }
         if let sessionError = error as? LanguageModelSession.Error {
             switch sessionError {
             case .concurrentRequests:
-                return (.concurrentRequests, sessionError.localizedDescription)
+                return (.concurrentRequests, sessionError.localizedDescription, nil)
             case .transcriptMutationWhileResponding:
-                return (.transcriptMutationWhileResponding, sessionError.localizedDescription)
+                return (.transcriptMutationWhileResponding, sessionError.localizedDescription, nil)
             @unknown default:
-                return (.generationFailed, sessionError.localizedDescription)
+                return (.generationFailed, sessionError.localizedDescription, nil)
             }
         }
         if let parsingError = error as? GeneratedContent.ParsingError {
-            return (.decodingFailure, parsingError.localizedDescription)
+            var extra: [String: Any] = ["rawContent": parsingError.rawContent]
+            if let underlyingError = parsingError.underlyingError {
+                extra["underlyingError"] = underlyingError.localizedDescription
+            }
+            return (
+                .decodingFailure,
+                parsingError.localizedDescription,
+                errorDetailsJSON(debugDescription: parsingError.debugDescription, extra: extra)
+            )
         }
     }
 #endif
 
     if let generationError = error as? LanguageModelSession.GenerationError {
-        return mapGenerationError(generationError)
+        let (code, message) = mapGenerationError(generationError)
+        return (code, message, nil)
     }
     return nil
 }
 
 #if compiler(>=6.4)
 @available(macOS 27.0, *)
-private func mapLanguageModelError(_ error: LanguageModelError) -> (FFIErrorCode, String) {
+private func mapLanguageModelError(_ error: LanguageModelError) -> (FFIErrorCode, String, String?) {
     let message = error.localizedDescription
     switch error {
-    case .contextSizeExceeded:
-        return (.exceededContextWindowSize, message)
-    case .rateLimited:
-        return (.rateLimited, message)
-    case .guardrailViolation:
-        return (.guardrailViolation, message)
-    case .refusal:
-        return (.refusal, message)
-    case .unsupportedCapability:
-        return (.unsupportedCapability, message)
-    case .unsupportedTranscriptContent:
-        return (.unsupportedTranscriptContent, message)
-    case .unsupportedGenerationGuide:
-        return (.unsupportedGuide, message)
-    case .unsupportedLanguageOrLocale:
-        return (.unsupportedLanguageOrLocale, message)
-    case .timeout:
-        return (.timeout, message)
+    case .contextSizeExceeded(let details):
+        return (
+            .exceededContextWindowSize,
+            message,
+            errorDetailsJSON(
+                debugDescription: details.debugDescription,
+                metadata: details.metadata,
+                extra: ["contextSize": details.contextSize, "tokenCount": details.tokenCount]
+            )
+        )
+    case .rateLimited(let details):
+        var extra: [String: Any] = [:]
+        if let resetDate = details.resetDate {
+            extra["resetDate"] = ISO8601DateFormatter().string(from: resetDate)
+        }
+        return (
+            .rateLimited,
+            message,
+            errorDetailsJSON(
+                debugDescription: details.debugDescription,
+                metadata: details.metadata,
+                extra: extra
+            )
+        )
+    case .guardrailViolation(let details):
+        return (
+            .guardrailViolation,
+            message,
+            errorDetailsJSON(debugDescription: details.debugDescription, metadata: details.metadata)
+        )
+    case .refusal(let details):
+        return (
+            .refusal,
+            message,
+            errorDetailsJSON(debugDescription: details.debugDescription, metadata: details.metadata)
+        )
+    case .unsupportedCapability(let details):
+        return (
+            .unsupportedCapability,
+            message,
+            errorDetailsJSON(
+                debugDescription: details.debugDescription,
+                metadata: details.metadata,
+                extra: ["capability": capabilityIdentifier(details.capability)]
+            )
+        )
+    case .unsupportedTranscriptContent(let details):
+        let extra: [String: Any] = [
+            "unsupportedContent": details.unsupportedContent.map { String(describing: $0) }
+        ]
+        return (
+            .unsupportedTranscriptContent,
+            message,
+            errorDetailsJSON(
+                debugDescription: details.debugDescription,
+                metadata: details.metadata,
+                extra: extra
+            )
+        )
+    case .unsupportedGenerationGuide(let details):
+        var extra: [String: Any] = [:]
+        if let schemaName = details.schemaName {
+            extra["schemaName"] = schemaName
+        }
+        return (
+            .unsupportedGuide,
+            message,
+            errorDetailsJSON(
+                debugDescription: details.debugDescription,
+                metadata: details.metadata,
+                extra: extra
+            )
+        )
+    case .unsupportedLanguageOrLocale(let details):
+        return (
+            .unsupportedLanguageOrLocale,
+            message,
+            errorDetailsJSON(
+                debugDescription: details.debugDescription,
+                metadata: details.metadata,
+                extra: ["languageCode": details.languageCode.identifier]
+            )
+        )
+    case .timeout(let details):
+        return (
+            .timeout,
+            message,
+            errorDetailsJSON(debugDescription: details.debugDescription, metadata: details.metadata)
+        )
     @unknown default:
-        return (.generationFailed, message)
+        return (.generationFailed, message, nil)
     }
+}
+
+@available(macOS 27.0, *)
+private func capabilityIdentifier(_ capability: LanguageModelCapabilities.Capability) -> String {
+    if capability == .vision { return "vision" }
+    if capability == .guidedGeneration { return "guidedGeneration" }
+    if capability == .reasoning { return "reasoning" }
+    if capability == .toolCalling { return "toolCalling" }
+    return String(describing: capability)
+}
+
+@available(macOS 27.0, *)
+private func errorDetailsJSON(
+    debugDescription: String,
+    metadata: [String: any Sendable] = [:],
+    extra: [String: Any] = [:]
+) -> String? {
+    var payload = extra
+    payload["version"] = 1
+    payload["debugDescription"] = debugDescription
+    if !metadata.isEmpty {
+        payload["metadata"] = metadata.mapValues { String(describing: $0) }
+    }
+
+    guard JSONSerialization.isValidJSONObject(payload),
+          let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]) else {
+        return nil
+    }
+    return String(data: data, encoding: .utf8)
 }
 #endif
 
@@ -985,7 +1133,7 @@ public func fm_session_stream(
     _ userData: UnsafeMutableRawPointer?,
     _ onChunk: @escaping @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?) -> Void,
     _ onDone: @escaping @convention(c) (UnsafeMutableRawPointer?) -> Void,
-    _ onError: @escaping @convention(c) (UnsafeMutableRawPointer?, Int32, UnsafePointer<CChar>?) -> Void
+    _ onError: @escaping StreamErrorCallbackFn
 ) {
     let state = Unmanaged<AnyObject>.fromOpaque(sessionPtr).takeUnretainedValue() as! SessionState
     let promptString = String(cString: prompt)
@@ -1015,7 +1163,7 @@ public func fm_session_stream(
                 if Task.isCancelled {
                     callbackQueue.sync {
                         "Cancelled".withCString { ptr in
-                            onError(userData, FFIErrorCode.cancelled.rawValue, ptr)
+                            onError(userData, FFIErrorCode.cancelled.rawValue, ptr, nil)
                         }
                     }
                     semaphore.signal()
@@ -1028,10 +1176,14 @@ public func fm_session_stream(
             }
         } catch {
             callbackQueue.sync {
-                let (errorCode, errorMessage) = mapStreamingError(error)
-                errorMessage.withCString { ptr in
-                    onError(userData, errorCode, ptr)
-                }
+                let (errorCode, errorMessage, detailsJSON) = mapStreamingError(error)
+                invokeStreamErrorCallback(
+                    onError,
+                    userData: userData,
+                    code: errorCode,
+                    message: errorMessage,
+                    detailsJSON: detailsJSON
+                )
             }
         }
 
@@ -1301,7 +1453,7 @@ public func fm_session_stream_json(
     _ userData: UnsafeMutableRawPointer?,
     _ onChunk: @escaping @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?) -> Void,
     _ onDone: @escaping @convention(c) (UnsafeMutableRawPointer?) -> Void,
-    _ onError: @escaping @convention(c) (UnsafeMutableRawPointer?, Int32, UnsafePointer<CChar>?) -> Void
+    _ onError: @escaping StreamErrorCallbackFn
 ) {
     let state = Unmanaged<AnyObject>.fromOpaque(sessionPtr).takeUnretainedValue() as! SessionState
     let promptString = String(cString: prompt)
@@ -1333,7 +1485,7 @@ public func fm_session_stream_json(
                     if Task.isCancelled {
                         callbackQueue.sync {
                             "Cancelled".withCString { ptr in
-                                onError(userData, FFIErrorCode.cancelled.rawValue, ptr)
+                                onError(userData, FFIErrorCode.cancelled.rawValue, ptr, nil)
                             }
                         }
                         semaphore.signal()
@@ -1367,7 +1519,7 @@ public func fm_session_stream_json(
                     if Task.isCancelled {
                         callbackQueue.sync {
                             "Cancelled".withCString { ptr in
-                                onError(userData, FFIErrorCode.cancelled.rawValue, ptr)
+                                onError(userData, FFIErrorCode.cancelled.rawValue, ptr, nil)
                             }
                         }
                         semaphore.signal()
@@ -1381,10 +1533,14 @@ public func fm_session_stream_json(
             }
         } catch {
             callbackQueue.sync {
-                let (errorCode, errorMessage) = mapStreamingError(error)
-                errorMessage.withCString { ptr in
-                    onError(userData, errorCode, ptr)
-                }
+                let (errorCode, errorMessage, detailsJSON) = mapStreamingError(error)
+                invokeStreamErrorCallback(
+                    onError,
+                    userData: userData,
+                    code: errorCode,
+                    message: errorMessage,
+                    detailsJSON: detailsJSON
+                )
             }
         }
 
@@ -1397,19 +1553,37 @@ public func fm_session_stream_json(
 }
 
 /// Maps a streaming error to an FFI error code and message, with full error differentiation.
-private func mapStreamingError(_ error: Error) -> (Int32, String) {
+private func mapStreamingError(_ error: Error) -> (Int32, String, String?) {
     if let toolError = error as? ToolError {
         var msg = toolError.message
         if let name = toolError.toolName {
             msg += " [tool: \(name)]"
         }
-        return (FFIErrorCode.toolError.rawValue, msg)
-    } else if let (code, message) = mapFoundationModelsError(error) {
-        return (code.rawValue, message)
+        return (FFIErrorCode.toolError.rawValue, msg, nil)
+    } else if let (code, message, detailsJSON) = mapFoundationModelsError(error) {
+        return (code.rawValue, message, detailsJSON)
     } else if let timeoutError = error as? TimeoutError {
-        return (FFIErrorCode.timeout.rawValue, timeoutError.message)
+        return (FFIErrorCode.timeout.rawValue, timeoutError.message, nil)
     } else {
-        return (FFIErrorCode.generationFailed.rawValue, error.localizedDescription)
+        return (FFIErrorCode.generationFailed.rawValue, error.localizedDescription, nil)
+    }
+}
+
+private func invokeStreamErrorCallback(
+    _ callback: StreamErrorCallbackFn,
+    userData: UnsafeMutableRawPointer?,
+    code: Int32,
+    message: String,
+    detailsJSON: String?
+) {
+    message.withCString { messagePtr in
+        if let detailsJSON = detailsJSON {
+            detailsJSON.withCString { detailsPtr in
+                callback(userData, code, messagePtr, detailsPtr)
+            }
+        } else {
+            callback(userData, code, messagePtr, nil)
+        }
     }
 }
 

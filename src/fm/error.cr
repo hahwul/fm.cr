@@ -1,3 +1,5 @@
+require "json"
+
 module Fm
   # Error codes returned by the Swift FFI layer.
   #
@@ -29,6 +31,32 @@ module Fm
 
   # Base error class for all FoundationModels errors.
   class Error < Exception
+    # Structured, versioned diagnostic details supplied by FoundationModels.
+    # This is `nil` on older SDKs and for errors without associated details.
+    getter details : JSON::Any?
+
+    def initialize(
+      message : String? = nil,
+      cause : Exception? = nil,
+      *,
+      @details : JSON::Any? = nil,
+    )
+      super(message, cause)
+    end
+
+    protected def detail(key : String) : JSON::Any?
+      if details = @details
+        details.as_h?.try &.[key]?
+      end
+    end
+
+    protected def detail_string(key : String) : String?
+      detail(key).try &.as_s?
+    end
+
+    protected def detail_i64(key : String) : Int64?
+      detail(key).try &.as_i64?
+    end
   end
 
   # Model is not available on this device.
@@ -70,6 +98,8 @@ module Fm
 
   # The input exceeded the model's context window size.
   class ExceededContextWindowSizeError < GenerationError
+    getter context_size : Int64? { detail_i64("contextSize") }
+    getter token_count : Int64? { detail_i64("tokenCount") }
   end
 
   # Model assets are unavailable (downloading or missing).
@@ -82,18 +112,29 @@ module Fm
 
   # A generation guide constraint is not supported.
   class UnsupportedGuideError < GenerationError
+    getter schema_name : String? { detail_string("schemaName") }
   end
 
   # The requested language or locale is not supported.
   class UnsupportedLanguageOrLocaleError < GenerationError
+    getter language_code : String? { detail_string("languageCode") }
   end
 
   # Failed to decode the model's output.
   class DecodingFailureError < GenerationError
+    getter raw_content : String? { detail_string("rawContent") }
+    getter underlying_error_message : String? { detail_string("underlyingError") }
   end
 
   # The request was rate-limited by the system.
   class RateLimitedError < GenerationError
+    def reset_date : Time?
+      if value = detail_string("resetDate")
+        Time.parse_rfc3339(value)
+      end
+    rescue Time::Format::Error
+      nil
+    end
   end
 
   # Multiple concurrent requests were attempted on the same session.
@@ -110,10 +151,12 @@ module Fm
 
   # The selected language model doesn't support a requested capability.
   class UnsupportedCapabilityError < GenerationError
+    getter capability : String? { detail_string("capability") }
   end
 
   # The prompt or transcript contains content the model cannot process.
   class UnsupportedTranscriptContentError < GenerationError
+    getter unsupported_content : Array(JSON::Any)? { detail("unsupportedContent").try &.as_a? }
   end
 
   # The session transcript was changed while a response was in progress.
@@ -129,8 +172,14 @@ module Fm
     getter tool_name : String
     getter arguments_json : String?
 
-    def initialize(@tool_name : String, message : String, @arguments_json : String? = nil)
-      super("Tool '#{@tool_name}' failed: #{message}")
+    def initialize(
+      @tool_name : String,
+      message : String,
+      @arguments_json : String? = nil,
+      *,
+      details : JSON::Any? = nil,
+    )
+      super("Tool '#{@tool_name}' failed: #{message}", details: details)
     end
   end
 
@@ -179,13 +228,18 @@ module Fm
     tool_args_ptr = LibFmFfi.fm_error_tool_arguments(error_ptr)
     tool_args = tool_args_ptr.null? ? nil : String.new(tool_args_ptr)
 
+    details_ptr = LibFmFfi.fm_error_details_json(error_ptr)
+    details_json = details_ptr.null? ? nil : String.new(details_ptr)
+
     LibFmFfi.fm_error_free(error_ptr)
+
+    details = parse_error_details(details_json)
 
     error_code = GenerationErrorCode.from_value?(code)
     # Unknown codes from the FFI-pointer path map to InternalError.
-    return InternalError.new(message) unless error_code
+    return InternalError.new(message, details: details) unless error_code
 
-    exception_for(error_code, message, tool_name: tool_name, tool_args: tool_args)
+    exception_for(error_code, message, tool_name: tool_name, tool_args: tool_args, details: details)
   end
 
   # :nodoc:
@@ -205,34 +259,36 @@ module Fm
     *,
     tool_name : String? = nil,
     tool_args : String? = nil,
+    details : JSON::Any? = nil,
   ) : Error
     case error_code
-    in .unknown?             then InternalError.new(message)
-    in .model_not_available? then ModelNotAvailableError.new(message)
-    in .generation?          then GenerationError.new(message)
-    in .cancelled?           then CancelledError.new("Operation cancelled")
+    in .unknown?             then InternalError.new(message, details: details)
+    in .model_not_available? then ModelNotAvailableError.new(message, details: details)
+    in .generation?          then GenerationError.new(message, details: details)
+    in .cancelled?           then CancelledError.new("Operation cancelled", details: details)
     in .tool_call?
       ToolCallError.new(
         tool_name: tool_name || "unknown",
         message: message,
-        arguments_json: tool_args
+        arguments_json: tool_args,
+        details: details
       )
-    in .invalid_input?                  then InvalidInputError.new(message)
-    in .timeout?                        then TimeoutError.new(message)
-    in .exceeded_context_window_size?   then ExceededContextWindowSizeError.new(message)
-    in .assets_unavailable?             then AssetsUnavailableError.new(message)
-    in .guardrail_violation?            then GuardrailViolationError.new(message)
-    in .unsupported_guide?              then UnsupportedGuideError.new(message)
-    in .unsupported_language_or_locale? then UnsupportedLanguageOrLocaleError.new(message)
-    in .decoding_failure?               then DecodingFailureError.new(message)
-    in .rate_limited?                   then RateLimitedError.new(message)
-    in .concurrent_requests?            then ConcurrentRequestsError.new(message)
-    in .refusal?                        then RefusalError.new(message)
-    in .invalid_generation_schema?      then InvalidGenerationSchemaError.new(message)
-    in .unsupported_capability?         then UnsupportedCapabilityError.new(message)
-    in .unsupported_transcript_content? then UnsupportedTranscriptContentError.new(message)
+    in .invalid_input?                  then InvalidInputError.new(message, details: details)
+    in .timeout?                        then TimeoutError.new(message, details: details)
+    in .exceeded_context_window_size?   then ExceededContextWindowSizeError.new(message, details: details)
+    in .assets_unavailable?             then AssetsUnavailableError.new(message, details: details)
+    in .guardrail_violation?            then GuardrailViolationError.new(message, details: details)
+    in .unsupported_guide?              then UnsupportedGuideError.new(message, details: details)
+    in .unsupported_language_or_locale? then UnsupportedLanguageOrLocaleError.new(message, details: details)
+    in .decoding_failure?               then DecodingFailureError.new(message, details: details)
+    in .rate_limited?                   then RateLimitedError.new(message, details: details)
+    in .concurrent_requests?            then ConcurrentRequestsError.new(message, details: details)
+    in .refusal?                        then RefusalError.new(message, details: details)
+    in .invalid_generation_schema?      then InvalidGenerationSchemaError.new(message, details: details)
+    in .unsupported_capability?         then UnsupportedCapabilityError.new(message, details: details)
+    in .unsupported_transcript_content? then UnsupportedTranscriptContentError.new(message, details: details)
     in .transcript_mutation_while_responding?
-      TranscriptMutationWhileRespondingError.new(message)
+      TranscriptMutationWhileRespondingError.new(message, details: details)
     end
   end
 
@@ -247,18 +303,25 @@ module Fm
   # :nodoc:
   # Converts a streaming error code and message to a typed Crystal exception.
   #
-  # Unlike `error_from_swift`, streaming errors only provide a code and
-  # message string — there is no FFI error pointer to extract tool context
-  # from.
-  def self.error_from_stream(code : Int32, message : String) : Error
+  # Unlike `error_from_swift`, streaming errors have no FFI error pointer from
+  # which to extract tool context. macOS 27 diagnostic details are passed as a
+  # separate JSON string.
+  def self.error_from_stream(code : Int32, message : String, details_json : String? = nil) : Error
+    details = parse_error_details(details_json)
     error_code = GenerationErrorCode.from_value?(code)
     # Unknown codes from the stream path map to GenerationError (the stream
     # path has no FFI error object, so InternalError would be misleading).
-    return GenerationError.new(message) unless error_code
+    return GenerationError.new(message, details: details) unless error_code
 
     # No FFI error pointer here, so no tool context to pass; a `tool_call?`
     # code yields a `ToolCallError` with an "unknown" tool name.
-    exception_for(error_code, message)
+    exception_for(error_code, message, details: details)
+  end
+
+  private def self.parse_error_details(details_json : String?) : JSON::Any?
+    JSON.parse(details_json) if details_json
+  rescue JSON::ParseException
+    nil
   end
 
   # :nodoc:

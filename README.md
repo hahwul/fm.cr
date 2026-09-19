@@ -228,7 +228,7 @@ Estimate context window usage and compact long conversations:
 
 ```crystal
 limit = Fm::ContextLimit.default_on_device(model)
-usage = Fm.context_usage_from_transcript(session.transcript_json, limit)
+usage = Fm.context_usage_from_transcript(model, session.transcript, limit)
 
 puts "Utilization: #{(usage.utilization * 100).round(1)}%"
 puts "Over limit: #{usage.over_limit?}"
@@ -277,9 +277,24 @@ FoundationModels generation error cases:
 | `UnsupportedTranscriptContentError` | The transcript contains content the model cannot process (macOS 27+) |
 | `TranscriptMutationWhileRespondingError` | The transcript changed while a response was in progress (macOS 27+) |
 
+Every `Fm::Error` exposes optional `.details` as parsed JSON. On macOS 27,
+errors with associated diagnostics also provide typed accessors:
+
+| Error | Accessors |
+|-------|-----------|
+| `ExceededContextWindowSizeError` | `.context_size`, `.token_count` |
+| `RateLimitedError` | `.reset_date` |
+| `UnsupportedGuideError` | `.schema_name` |
+| `UnsupportedLanguageOrLocaleError` | `.language_code` |
+| `UnsupportedCapabilityError` | `.capability` |
+| `UnsupportedTranscriptContentError` | `.unsupported_content` |
+| `DecodingFailureError` | `.raw_content`, `.underlying_error_message` |
+
 ```crystal
 begin
   response = session.respond("Hello")
+rescue ex : Fm::ExceededContextWindowSizeError
+  puts "#{ex.token_count} tokens exceed the #{ex.context_size}-token context"
 rescue ex : Fm::TimeoutError
   puts "Timed out: #{ex.message}"
 rescue ex : Fm::ToolCallError
@@ -301,6 +316,7 @@ end
 | `#ensure_available!` | Raises if not available |
 | `#wait_until_available(timeout)` | Blocks until available, raising `TimeoutError` on expiry |
 | `#token_count_for(prompt)` | Token count for a prompt (macOS 26.4+, returns `nil` if unavailable) |
+| `#token_count_for(transcript)` | Exact token count for a complete transcript (macOS 26.4+) |
 | `#token_count_for_tools(instructions, tools)` | Combined token count for instructions + typed tools (macOS 26.4+) |
 | `#token_count_for_tools(instructions, tools_json?)` | Low-level JSON overload for combined token counting (macOS 26.4+) |
 | `#context_size` | Maximum model context size in tokens (macOS 26+ with SDK 26.4+, returns `nil` if unavailable) |

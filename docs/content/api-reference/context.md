@@ -15,9 +15,17 @@ Fm.context_usage_from_transcript(
   transcript_json : String,
   limit : Fm::ContextLimit
 ) : Fm::ContextUsage
+
+Fm.context_usage_from_transcript(
+  model : Fm::SystemLanguageModel,
+  transcript : Fm::Transcript,
+  limit : Fm::ContextLimit
+) : Fm::ContextUsage
 ```
 
-Estimates token usage from a transcript JSON string and context limit configuration.
+The model overload uses FoundationModels' native transcript tokenizer on macOS
+26.4+ and falls back to the character heuristic when unavailable. The other
+overloads always estimate usage from extracted transcript text.
 
 ### `Fm.estimate_tokens`
 

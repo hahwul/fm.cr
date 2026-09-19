@@ -99,6 +99,15 @@ Returns the token count for a prompt string, or `nil` if the API is unavailable.
 
 `#token_usage_for` remains available as a backward-compatible alias.
 
+The method also accepts a complete transcript:
+
+```crystal
+model.token_count_for(transcript : Fm::Transcript) : Int64?
+```
+
+This uses FoundationModels' native transcript representation rather than
+counting extracted text, so tool calls and other non-text entries are included.
+
 ### `#token_count_for_tools`
 
 ```crystal

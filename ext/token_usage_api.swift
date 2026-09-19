@@ -63,6 +63,42 @@ public func fm_model_token_usage_for(
     return tokenUsageUnavailableSentinel
 }
 
+/// Returns the token count for a serialized transcript using 26.4+ APIs.
+/// Returns a sentinel when runtime APIs are unavailable.
+@_cdecl("fm_model_token_usage_for_transcript")
+public func fm_model_token_usage_for_transcript(
+    _ modelPtr: UnsafeMutableRawPointer,
+    _ transcriptJson: UnsafePointer<CChar>,
+    _ errorOut: UnsafeMutablePointer<UnsafeMutableRawPointer?>?
+) -> Int64 {
+    let model = Unmanaged<AnyObject>.fromOpaque(modelPtr).takeUnretainedValue() as! SystemLanguageModel
+    let jsonString = String(cString: transcriptJson)
+
+    if #available(iOS 26.4, macOS 26.4, visionOS 26.4, *) {
+        do {
+            guard let jsonData = jsonString.data(using: .utf8) else {
+                throw TokenUsageError(message: "Invalid UTF-8 in transcript JSON")
+            }
+            let transcript = try JSONDecoder().decode(Transcript.self, from: jsonData)
+            let tokenCount = try AsyncWaiter.wait {
+                try await model.tokenCount(for: transcript)
+            }
+            guard let tokenCount = Int64(exactly: tokenCount) else {
+                throw TokenUsageError(message: "Token count value is out of Int64 range")
+            }
+            return tokenCount
+        } catch {
+            if let errorOut = errorOut {
+                errorOut.pointee = createGenerationErrorFromException(error)
+            }
+            return -1
+        }
+    }
+
+    _ = errorOut
+    return tokenUsageUnavailableSentinel
+}
+
 /// Returns the token count for instructions + tools using 26.4+ APIs when available.
 /// Returns a sentinel when runtime APIs are unavailable.
 @_cdecl("fm_model_token_usage_for_tools")
