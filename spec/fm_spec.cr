@@ -225,6 +225,7 @@ describe Fm do
       opts.temperature.should be_nil
       opts.sampling.should be_nil
       opts.max_response_tokens.should be_nil
+      opts.tool_calling_mode.should be_nil
     end
 
     it "creates options with parameters" do
@@ -258,6 +259,65 @@ describe Fm do
       opts = Fm::GenerationOptions.new(sampling: Fm::Sampling::Random)
       json = opts.to_json
       json.should contain("random")
+    end
+
+    it "serializes the macOS 27 tool calling policy" do
+      options = Fm::GenerationOptions.new(tool_calling_mode: Fm::ToolCallingMode::Required)
+
+      options.tool_calling_mode.should eq Fm::ToolCallingMode::Required
+      options.to_json.should eq %({"toolCallingMode":"required"})
+    end
+  end
+
+  describe Fm::ContextOptions do
+    it "serializes schema and standard reasoning options" do
+      options = Fm::ContextOptions.new(
+        include_schema_in_prompt: false,
+        reasoning_level: Fm::ReasoningLevel.deep,
+      )
+
+      options.empty?.should be_false
+      options.to_json.should eq %({"includeSchemaInPrompt":false,"reasoningLevel":"deep"})
+    end
+
+    it "supports provider-specific reasoning levels" do
+      level = Fm::ReasoningLevel.custom("extended")
+      options = Fm::ContextOptions.new(reasoning_level: level)
+
+      level.value.should eq "extended"
+      options.to_json.should eq %({"reasoningLevel":"extended"})
+    end
+
+    it "rejects an empty custom reasoning level" do
+      expect_raises(ArgumentError, "reasoning level must not be empty") do
+        Fm::ReasoningLevel.custom("")
+      end
+    end
+
+    # Generation and context options travel as one JSON payload. Callers that
+    # pass no context options must keep producing the pre-macOS 27 payload
+    # byte-for-byte, otherwise the native side stops taking the legacy path.
+    it "leaves the request payload untouched without context options" do
+      options = Fm::GenerationOptions.new(temperature: 0.5)
+
+      Fm::Session.request_options_json(options, Fm::ContextOptions.default)
+        .should eq options.to_json
+    end
+
+    it "nests context options inside the request payload" do
+      options = Fm::GenerationOptions.new(max_response_tokens: 128_u32)
+      context = Fm::ContextOptions.new(reasoning_level: Fm::ReasoningLevel.light)
+
+      json = JSON.parse(Fm::Session.request_options_json(options, context))
+      json["maximumResponseTokens"].as_i.should eq 128
+      json["contextOptions"]["reasoningLevel"].as_s.should eq "light"
+    end
+
+    it "nests context options onto an otherwise empty payload" do
+      context = Fm::ContextOptions.new(include_schema_in_prompt: false)
+
+      Fm::Session.request_options_json(Fm::GenerationOptions.default, context)
+        .should eq %({"contextOptions":{"includeSchemaInPrompt":false}})
     end
   end
 
@@ -380,6 +440,47 @@ describe Fm do
       io = IO::Memory.new
       response.to_s(io)
       io.to_s.should eq "test output"
+    end
+
+    it "carries macOS 27 response token usage" do
+      usage = Fm::Usage.from_json(
+        %({"inputTokens":12,"cachedInputTokens":3,"outputTokens":8,"reasoningTokens":2,"totalTokens":20,"metadata":{"provider":"system"}})
+      )
+      response = Fm::Response.new("done", usage)
+
+      response.usage.should eq usage
+      usage.input_tokens.should eq 12
+      usage.cached_input_tokens.should eq 3
+      usage.output_tokens.should eq 8
+      usage.reasoning_tokens.should eq 2
+      usage.total_tokens.should eq 20
+      usage.metadata.not_nil!["provider"].as_s.should eq "system"
+    end
+  end
+
+  describe Fm::Usage do
+    it "derives the total from the input and output counts" do
+      usage = Fm::Usage.new(
+        input_tokens: 12_i64,
+        cached_input_tokens: 3_i64,
+        output_tokens: 8_i64,
+        reasoning_tokens: 2_i64,
+      )
+
+      usage.total_tokens.should eq 20
+      usage.metadata.should be_nil
+    end
+
+    it "keeps an explicit total" do
+      usage = Fm::Usage.new(
+        input_tokens: 12_i64,
+        cached_input_tokens: 3_i64,
+        output_tokens: 8_i64,
+        reasoning_tokens: 2_i64,
+        total_tokens: 25_i64,
+      )
+
+      usage.total_tokens.should eq 25
     end
   end
 
@@ -1606,12 +1707,20 @@ describe Fm do
       decoding.raw_content.should eq "{bad"
       decoding.underlying_error_message.should eq "Unexpected token"
 
+      # The native side encodes the offending entries the same way
+      # `Transcript#to_json` does, so they stay inspectable instead of
+      # arriving as an opaque `String(describing:)` blob.
       transcript = Fm.error_from_stream(
         Fm::GenerationErrorCode::UnsupportedTranscriptContent.value,
         "unsupported",
-        %({"version":1,"unsupportedContent":["toolCall(name: foo)"]})
+        %q({"version":1,"unsupportedContent":[{"id":"entry-1","role":"response",) +
+        %q("toolCalls":[{"id":"call-1","name":"search","arguments":"\"tides\""}]}]})
       ).as(Fm::UnsupportedTranscriptContentError)
-      transcript.unsupported_content.not_nil!.map(&.as_s).should eq ["toolCall(name: foo)"]
+
+      entries = transcript.unsupported_content.not_nil!
+      entries.size.should eq 1
+      entries[0]["role"].as_s.should eq "response"
+      entries[0]["toolCalls"][0]["name"].as_s.should eq "search"
     end
 
     it "does not mask the original error when details JSON is malformed" do

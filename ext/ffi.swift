@@ -263,7 +263,7 @@ private func mapLanguageModelError(_ error: LanguageModelError) -> (FFIErrorCode
         )
     case .unsupportedTranscriptContent(let details):
         let extra: [String: Any] = [
-            "unsupportedContent": details.unsupportedContent.map { String(describing: $0) }
+            "unsupportedContent": encodeTranscriptEntries(details.unsupportedContent)
         ]
         return (
             .unsupportedTranscriptContent,
@@ -316,6 +316,18 @@ private func capabilityIdentifier(_ capability: LanguageModelCapabilities.Capabi
     if capability == .reasoning { return "reasoning" }
     if capability == .toolCalling { return "toolCalling" }
     return String(describing: capability)
+}
+
+@available(macOS 27.0, *)
+private func encodeTranscriptEntries(_ entries: [Transcript.Entry]) -> [Any] {
+    let transcript = Transcript(entries: entries)
+    guard let data = try? JSONEncoder().encode(transcript),
+          let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+          let body = object["transcript"] as? [String: Any],
+          let encodedEntries = body["entries"] as? [Any] else {
+        return []
+    }
+    return encodedEntries
 }
 
 @available(macOS 27.0, *)
@@ -898,6 +910,7 @@ private final class SessionState: @unchecked Sendable {
     let session: LanguageModelSession
     let toolDispatcher: ToolDispatcher?
     var currentTask: Task<Void, Never>?
+    private var lastUsageJSON: String?
     private let lock = NSLock()
 
     init(session: LanguageModelSession, toolDispatcher: ToolDispatcher? = nil) {
@@ -917,7 +930,53 @@ private final class SessionState: @unchecked Sendable {
         currentTask?.cancel()
         currentTask = nil
     }
+
+    func setLastUsageJSON(_ json: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        lastUsageJSON = json
+    }
+
+    func getLastUsageJSON() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return lastUsageJSON
+    }
 }
+
+#if compiler(>=6.4)
+@available(macOS 27.0, *)
+private func encodeUsage(_ usage: LanguageModelSession.Usage) -> String? {
+    var object: [String: Any] = [
+        "inputTokens": usage.input.totalTokenCount,
+        "cachedInputTokens": usage.input.cachedTokenCount,
+        "outputTokens": usage.output.totalTokenCount,
+        "reasoningTokens": usage.output.reasoningTokenCount,
+        "totalTokens": usage.totalTokenCount,
+    ]
+
+    if !usage.metadata.isEmpty {
+        var metadata: [String: Any] = [:]
+        for (key, value) in usage.metadata {
+            let json = value.jsonString
+            if let data = json.data(using: .utf8),
+               let decoded = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) {
+                metadata[key] = decoded
+            } else {
+                metadata[key] = json
+            }
+        }
+        object["metadata"] = metadata
+    }
+
+    guard JSONSerialization.isValidJSONObject(object),
+          let data = try? JSONSerialization.data(withJSONObject: object),
+          let json = String(data: data, encoding: .utf8) else {
+        return nil
+    }
+    return json
+}
+#endif
 
 // MARK: - Session Creation
 
@@ -1075,14 +1134,32 @@ public func fm_session_respond(
     let state = Unmanaged<AnyObject>.fromOpaque(sessionPtr).takeUnretainedValue() as! SessionState
     let promptString = String(cString: prompt)
     let options = parseGenerationOptions(optionsJson)
+    state.setLastUsageJSON(nil)
+
+    let contextOptionsDTO = parseContextOptionsDTO(optionsJson)
 
     do {
-        let content = try AsyncWaiter.wait {
+        let result = try AsyncWaiter.wait {
+#if compiler(>=6.4)
+            if #available(macOS 27.0, *), let contextOptionsDTO {
+                let contextOptions = makeContextOptions(contextOptionsDTO)
+                let response = try await state.session.respond(
+                    to: promptString, options: options, contextOptions: contextOptions
+                )
+                return (response.content, encodeUsage(response.usage))
+            }
+#endif
             let response = try await state.session.respond(to: promptString, options: options)
-            return response.content
+#if compiler(>=6.4)
+            if #available(macOS 27.0, *) {
+                return (response.content, encodeUsage(response.usage))
+            }
+#endif
+            return (response.content, nil)
         }
 
-        return strdup(content)
+        state.setLastUsageJSON(result.1)
+        return strdup(result.0)
     } catch {
         if let errorOut = errorOut {
             errorOut.pointee = createErrorFromException(error)
@@ -1103,14 +1180,32 @@ public func fm_session_respond_with_timeout(
     let state = Unmanaged<AnyObject>.fromOpaque(sessionPtr).takeUnretainedValue() as! SessionState
     let promptString = String(cString: prompt)
     let options = parseGenerationOptions(optionsJson)
+    state.setLastUsageJSON(nil)
+
+    let contextOptionsDTO = parseContextOptionsDTO(optionsJson)
 
     do {
-        let content = try AsyncWaiter.wait(timeoutMs: timeoutMs) {
+        let result = try AsyncWaiter.wait(timeoutMs: timeoutMs) {
+#if compiler(>=6.4)
+            if #available(macOS 27.0, *), let contextOptionsDTO {
+                let contextOptions = makeContextOptions(contextOptionsDTO)
+                let response = try await state.session.respond(
+                    to: promptString, options: options, contextOptions: contextOptions
+                )
+                return (response.content, encodeUsage(response.usage))
+            }
+#endif
             let response = try await state.session.respond(to: promptString, options: options)
-            return response.content
+#if compiler(>=6.4)
+            if #available(macOS 27.0, *) {
+                return (response.content, encodeUsage(response.usage))
+            }
+#endif
+            return (response.content, nil)
         }
 
-        return strdup(content)
+        state.setLastUsageJSON(result.1)
+        return strdup(result.0)
     } catch {
         if let errorOut = errorOut {
             errorOut.pointee = createErrorFromException(error)
@@ -1138,17 +1233,37 @@ public func fm_session_stream(
     let state = Unmanaged<AnyObject>.fromOpaque(sessionPtr).takeUnretainedValue() as! SessionState
     let promptString = String(cString: prompt)
     let options = parseGenerationOptions(optionsJson)
+    state.setLastUsageJSON(nil)
+
+    let contextOptionsDTO = parseContextOptionsDTO(optionsJson)
 
     let callbackQueue = DispatchQueue(label: "fm.ffi.callbacks", qos: .userInteractive)
     let semaphore = DispatchSemaphore(value: 0)
 
     let task = Task.detached {
         do {
+#if compiler(>=6.4)
+            let stream: LanguageModelSession.ResponseStream<String>
+            if #available(macOS 27.0, *), let contextOptionsDTO {
+                let contextOptions = makeContextOptions(contextOptionsDTO)
+                stream = state.session.streamResponse(
+                    to: promptString, options: options, contextOptions: contextOptions
+                )
+            } else {
+                stream = state.session.streamResponse(to: promptString, options: options)
+            }
+#else
             let stream = state.session.streamResponse(to: promptString, options: options)
+#endif
             var previousContent = ""
 
             for try await partialResponse in stream {
                 let content = partialResponse.content
+#if compiler(>=6.4)
+                if #available(macOS 27.0, *) {
+                    state.setLastUsageJSON(encodeUsage(partialResponse.usage))
+                }
+#endif
                 let delta = streamDelta(previous: previousContent, current: content)
                 previousContent = content
 
@@ -1207,6 +1322,30 @@ public func fm_session_cancel(_ sessionPtr: UnsafeMutableRawPointer) {
 public func fm_session_is_responding(_ sessionPtr: UnsafeMutableRawPointer) -> Bool {
     let state = Unmanaged<AnyObject>.fromOpaque(sessionPtr).takeUnretainedValue() as! SessionState
     return state.session.isResponding
+}
+
+/// Returns cumulative token usage for the session, or null before macOS 27.
+@_cdecl("fm_session_get_usage")
+public func fm_session_get_usage(
+    _ sessionPtr: UnsafeMutableRawPointer
+) -> UnsafeMutablePointer<CChar>? {
+    let state = Unmanaged<AnyObject>.fromOpaque(sessionPtr).takeUnretainedValue() as! SessionState
+#if compiler(>=6.4)
+    if #available(macOS 27.0, *), let json = encodeUsage(state.session.usage) {
+        return strdup(json)
+    }
+#endif
+    return nil
+}
+
+/// Returns token usage for the most recent response, or null before macOS 27.
+@_cdecl("fm_session_get_last_usage")
+public func fm_session_get_last_usage(
+    _ sessionPtr: UnsafeMutableRawPointer
+) -> UnsafeMutablePointer<CChar>? {
+    let state = Unmanaged<AnyObject>.fromOpaque(sessionPtr).takeUnretainedValue() as! SessionState
+    guard let json = state.getLastUsageJSON() else { return nil }
+    return strdup(json)
 }
 
 // MARK: - Transcript
@@ -1306,6 +1445,7 @@ private struct GenerationOptionsDTO: Decodable {
     var sampling: SamplingDTO?
     var maximumResponseTokens: UInt32?
     var seed: UInt64?
+    var toolCallingMode: String?
 
     func toGenerationOptions() -> GenerationOptions {
         var samplingParam: GenerationOptions.SamplingMode? = nil
@@ -1325,6 +1465,25 @@ private struct GenerationOptionsDTO: Decodable {
         }
 
 #if compiler(>=6.4)
+        if #available(macOS 27.0, *), let toolCallingMode {
+            let mode: GenerationOptions.ToolCallingMode?
+            switch toolCallingMode {
+            case "allowed": mode = .allowed
+            case "required": mode = .required
+            case "disallowed": mode = .disallowed
+            default: mode = nil
+            }
+
+            if let mode {
+                return GenerationOptions(
+                    samplingMode: samplingParam,
+                    temperature: temperature,
+                    maximumResponseTokens: maximumResponseTokens.map { Int($0) },
+                    toolCallingMode: mode
+                )
+            }
+        }
+
         return GenerationOptions(
             samplingMode: samplingParam,
             temperature: temperature,
@@ -1339,6 +1498,47 @@ private struct GenerationOptionsDTO: Decodable {
 #endif
     }
 }
+
+private struct ContextOptionsDTO: Decodable, Sendable {
+    var includeSchemaInPrompt: Bool?
+    var reasoningLevel: String?
+}
+
+private struct RequestOptionsDTO: Decodable {
+    var contextOptions: ContextOptionsDTO?
+}
+
+private func parseContextOptionsDTO(_ optionsJson: UnsafePointer<CChar>?) -> ContextOptionsDTO? {
+    guard let optionsJson,
+          let data = String(cString: optionsJson).data(using: .utf8),
+          let dto = try? JSONDecoder().decode(RequestOptionsDTO.self, from: data),
+          let context = dto.contextOptions else {
+        return nil
+    }
+    return context
+}
+
+#if compiler(>=6.4)
+@available(macOS 27.0, *)
+private func makeContextOptions(
+    _ context: ContextOptionsDTO,
+    defaultIncludeSchemaInPrompt: Bool? = nil
+) -> ContextOptions {
+    let reasoningLevel: ContextOptions.ReasoningLevel?
+    switch context.reasoningLevel {
+    case "light": reasoningLevel = .light
+    case "moderate": reasoningLevel = .moderate
+    case "deep": reasoningLevel = .deep
+    case .some(let custom): reasoningLevel = .custom(custom)
+    case .none: reasoningLevel = nil
+    }
+
+    return ContextOptions(
+        includeSchemaInPrompt: context.includeSchemaInPrompt ?? defaultIncludeSchemaInPrompt,
+        reasoningLevel: reasoningLevel
+    )
+}
+#endif
 
 // MARK: - Structured (JSON) Response
 
@@ -1364,23 +1564,65 @@ public func fm_session_respond_json(
     let promptString = String(cString: prompt)
     let schemaString = String(cString: schemaJson)
     let options = parseGenerationOptions(optionsJson)
+    state.setLastUsageJSON(nil)
+
+    let contextOptionsDTO = parseContextOptionsDTO(optionsJson)
 
     do {
-        let content: String
+        let result: (String, String?)
         if let schema = parseGenerationSchema(schemaJson) {
             // Native GenerationSchema API — guaranteed structured output
-            content = try AsyncWaiter.wait {
+            result = try AsyncWaiter.wait {
+#if compiler(>=6.4)
+                if #available(macOS 27.0, *), let contextOptionsDTO {
+                    let contextOptions = makeContextOptions(
+                        contextOptionsDTO, defaultIncludeSchemaInPrompt: true
+                    )
+                    let response = try await state.session.respond(
+                        to: promptString,
+                        schema: schema,
+                        options: options,
+                        contextOptions: contextOptions
+                    )
+                    return (response.content.jsonString, encodeUsage(response.usage))
+                }
+#endif
                 let response = try await state.session.respond(to: promptString, schema: schema, options: options)
-                return response.content.jsonString
+#if compiler(>=6.4)
+                if #available(macOS 27.0, *) {
+                    return (response.content.jsonString, encodeUsage(response.usage))
+                }
+#endif
+                return (response.content.jsonString, nil)
             }
         } else {
             // Fallback: prompt-based JSON generation
-            content = try respondJsonViaPrompt(
+#if compiler(>=6.4)
+            if #available(macOS 27.0, *), let contextOptionsDTO {
+                let contextOptions = makeContextOptions(
+                    contextOptionsDTO, defaultIncludeSchemaInPrompt: true
+                )
+                result = try respondJsonViaPrompt(
+                    state: state,
+                    prompt: promptString,
+                    schemaString: schemaString,
+                    options: options,
+                    contextOptions: contextOptions
+                )
+            } else {
+                result = try respondJsonViaPrompt(
+                    state: state, prompt: promptString, schemaString: schemaString, options: options
+                )
+            }
+#else
+            result = try respondJsonViaPrompt(
                 state: state, prompt: promptString, schemaString: schemaString, options: options
             )
+#endif
         }
 
-        return strdup(content)
+        state.setLastUsageJSON(result.1)
+        return strdup(result.0)
     } catch {
         if let errorOut = errorOut {
             errorOut.pointee = createErrorFromException(error)
@@ -1392,7 +1634,7 @@ public func fm_session_respond_json(
 /// Fallback: instructs the model via prompt to output JSON matching the schema.
 private func respondJsonViaPrompt(
     state: SessionState, prompt: String, schemaString: String, options: GenerationOptions
-) throws -> String {
+) throws -> (String, String?) {
     let structuredPrompt = """
     \(prompt)
 
@@ -1402,12 +1644,45 @@ private func respondJsonViaPrompt(
     Output only the JSON object, with no additional text, markdown formatting, or explanation.
     """
 
-    let raw = try AsyncWaiter.wait {
+    let result = try AsyncWaiter.wait {
         let response = try await state.session.respond(to: structuredPrompt, options: options)
-        return response.content
+#if compiler(>=6.4)
+        if #available(macOS 27.0, *) {
+            return (response.content, encodeUsage(response.usage))
+        }
+#endif
+        return (response.content, nil)
     }
-    return extractJson(from: raw)
+    return (extractJson(from: result.0), result.1)
 }
+
+#if compiler(>=6.4)
+@available(macOS 27.0, *)
+private func respondJsonViaPrompt(
+    state: SessionState,
+    prompt: String,
+    schemaString: String,
+    options: GenerationOptions,
+    contextOptions: ContextOptions
+) throws -> (String, String?) {
+    let structuredPrompt = """
+    \(prompt)
+
+    IMPORTANT: You must respond with valid JSON that matches this schema exactly:
+    \(schemaString)
+
+    Output only the JSON object, with no additional text, markdown formatting, or explanation.
+    """
+
+    let result = try AsyncWaiter.wait {
+        let response = try await state.session.respond(
+            to: structuredPrompt, options: options, contextOptions: contextOptions
+        )
+        return (response.content, encodeUsage(response.usage))
+    }
+    return (extractJson(from: result.0), result.1)
+}
+#endif
 
 /// Extracts JSON from a response that might contain markdown code blocks or extra text.
 private func extractJson(from content: String) -> String {
@@ -1460,6 +1735,9 @@ public func fm_session_stream_json(
     let schemaString = String(cString: schemaJson)
     let options = parseGenerationOptions(optionsJson)
     let schema = parseGenerationSchema(schemaJson)
+    state.setLastUsageJSON(nil)
+
+    let contextOptionsDTO = parseContextOptionsDTO(optionsJson)
 
     let callbackQueue = DispatchQueue(label: "fm.ffi.callbacks.json", qos: .userInteractive)
     let semaphore = DispatchSemaphore(value: 0)
@@ -1468,11 +1746,33 @@ public func fm_session_stream_json(
         do {
             if let schema = schema {
                 // Native GenerationSchema API
+#if compiler(>=6.4)
+                let stream: LanguageModelSession.ResponseStream<GeneratedContent>
+                if #available(macOS 27.0, *), let contextOptionsDTO {
+                    let contextOptions = makeContextOptions(
+                        contextOptionsDTO, defaultIncludeSchemaInPrompt: true
+                    )
+                    stream = state.session.streamResponse(
+                        to: promptString,
+                        schema: schema,
+                        options: options,
+                        contextOptions: contextOptions
+                    )
+                } else {
+                    stream = state.session.streamResponse(to: promptString, schema: schema, options: options)
+                }
+#else
                 let stream = state.session.streamResponse(to: promptString, schema: schema, options: options)
+#endif
                 var previousContent = ""
 
                 for try await partialResponse in stream {
                     let content = partialResponse.content.jsonString
+#if compiler(>=6.4)
+                    if #available(macOS 27.0, *) {
+                        state.setLastUsageJSON(encodeUsage(partialResponse.usage))
+                    }
+#endif
                     let delta = streamDelta(previous: previousContent, current: content)
                     previousContent = content
 
@@ -1502,11 +1802,30 @@ public func fm_session_stream_json(
 
                 Output only the JSON object, with no additional text, markdown formatting, or explanation.
                 """
+#if compiler(>=6.4)
+                let stream: LanguageModelSession.ResponseStream<String>
+                if #available(macOS 27.0, *), let contextOptionsDTO {
+                    let contextOptions = makeContextOptions(
+                        contextOptionsDTO, defaultIncludeSchemaInPrompt: true
+                    )
+                    stream = state.session.streamResponse(
+                        to: structuredPrompt, options: options, contextOptions: contextOptions
+                    )
+                } else {
+                    stream = state.session.streamResponse(to: structuredPrompt, options: options)
+                }
+#else
                 let stream = state.session.streamResponse(to: structuredPrompt, options: options)
+#endif
                 var previousContent = ""
 
                 for try await partialResponse in stream {
                     let content = partialResponse.content
+#if compiler(>=6.4)
+                    if #available(macOS 27.0, *) {
+                        state.setLastUsageJSON(encodeUsage(partialResponse.usage))
+                    }
+#endif
                     let delta = streamDelta(previous: previousContent, current: content)
                     previousContent = content
 
