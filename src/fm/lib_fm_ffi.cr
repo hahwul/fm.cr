@@ -130,6 +130,10 @@ module Fm
     fun fm_session_cancel(session : Void*) : Void
     fun fm_session_is_responding(session : Void*) : Bool
 
+    # Usage (macOS 27+, null on older systems/SDKs)
+    fun fm_session_get_usage(session : Void*) : LibC::Char*
+    fun fm_session_get_last_usage(session : Void*) : LibC::Char*
+
     # Transcript
     fun fm_session_get_transcript(session : Void*, error_out : Void**) : LibC::Char*
     fun fm_session_prewarm(session : Void*, prompt_prefix : LibC::Char*) : Void

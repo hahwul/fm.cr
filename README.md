@@ -169,10 +169,20 @@ puts response.content
 options = Fm::GenerationOptions.new(
   temperature: 0.8,
   sampling: Fm::Sampling::Random,
-  max_response_tokens: 500_u32
+  max_response_tokens: 500_u32,
+  tool_calling_mode: Fm::ToolCallingMode::Allowed # macOS 27+
 )
 
-response = session.respond("Write a haiku.", options)
+response = session.respond(
+  "Write a haiku.",
+  options,
+  context_options: Fm::ContextOptions.new(
+    reasoning_level: Fm::ReasoningLevel.moderate # macOS 27+
+  )
+)
+if usage = response.usage
+  puts "Used #{usage.total_tokens} tokens"
+end
 ```
 
 ### Timeout
@@ -339,6 +349,8 @@ end
 | `#prewarm(prompt_prefix?)` | Prewarm the model |
 | `#cancel` | Cancel ongoing generation |
 | `#responding?` | Whether generation is in progress |
+| `#usage` | Cumulative token usage (macOS 27+) |
+| `#last_usage` | Latest response token usage (macOS 27+) |
 
 ### `Fm::GenerationOptions`
 
@@ -349,6 +361,7 @@ end
 | `sampling_mode` | `SamplingMode?` | Advanced sampling; takes precedence over `sampling` |
 | `max_response_tokens` | `UInt32?` | Maximum response length |
 | `seed` | `UInt64?` | Seed for reproducible generation |
+| `tool_calling_mode` | `ToolCallingMode?` | Allow, require, or disallow tool calls (macOS 27+) |
 
 `Fm::SamplingMode` adds top-k / top-p control:
 

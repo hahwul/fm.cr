@@ -159,17 +159,23 @@ module Fm
     # response = session.respond("What is the capital of France?")
     # puts response.content
     # ```
-    def respond(prompt : String, options : GenerationOptions = GenerationOptions.default) : Response
+    def respond(
+      prompt : String,
+      options : GenerationOptions = GenerationOptions.default,
+      *,
+      context_options : ContextOptions = ContextOptions.default,
+    ) : Response
       error = Fm.make_error_ptr
+      request_options = Session.request_options_json(options, context_options)
 
       response_ptr = LibFmFfi.fm_session_respond(
         @ptr,
         prompt.to_unsafe,
-        options.to_json.to_unsafe,
+        request_options.to_unsafe,
         error
       )
 
-      Response.new(Session.extract_ffi_string!(response_ptr, error))
+      Response.new(Session.extract_ffi_string!(response_ptr, error), last_usage)
     end
 
     # Sends a prompt and waits for the response, with a timeout.
@@ -177,24 +183,31 @@ module Fm
     # A zero timeout means "no timeout" and delegates to `#respond`. Any other
     # positive `timeout` is honoured, rounded up to the 1 ms resolution of the
     # underlying FFI call. A negative `timeout` raises `ArgumentError`.
-    def respond(prompt : String, options : GenerationOptions = GenerationOptions.default, *, timeout : Time::Span) : Response
+    def respond(
+      prompt : String,
+      options : GenerationOptions = GenerationOptions.default,
+      *,
+      timeout : Time::Span,
+      context_options : ContextOptions = ContextOptions.default,
+    ) : Response
       timeout_ms = Fm.timeout_to_ms(timeout)
 
       if timeout_ms == 0
-        return respond(prompt, options)
+        return respond(prompt, options, context_options: context_options)
       end
 
       error = Fm.make_error_ptr
+      request_options = Session.request_options_json(options, context_options)
 
       response_ptr = LibFmFfi.fm_session_respond_with_timeout(
         @ptr,
         prompt.to_unsafe,
-        options.to_json.to_unsafe,
+        request_options.to_unsafe,
         timeout_ms,
         error
       )
 
-      Response.new(Session.extract_ffi_string!(response_ptr, error))
+      Response.new(Session.extract_ffi_string!(response_ptr, error), last_usage)
     end
 
     # Sends a prompt and streams the response via a block.
@@ -207,14 +220,21 @@ module Fm
     #   print chunk
     # end
     # ```
-    def stream(prompt : String, options : GenerationOptions = GenerationOptions.default, &block : String ->) : Nil
+    def stream(
+      prompt : String,
+      options : GenerationOptions = GenerationOptions.default,
+      *,
+      context_options : ContextOptions = ContextOptions.default,
+      &block : String ->
+    ) : Nil
       state = StreamState.new(block, -> { cancel })
       boxed = Box(StreamState).box(state)
+      request_options = Session.request_options_json(options, context_options)
 
       LibFmFfi.fm_session_stream(
         @ptr,
         prompt.to_unsafe,
-        options.to_json.to_unsafe,
+        request_options.to_unsafe,
         boxed,
         ->Session.on_chunk(Void*, LibC::Char*),
         ->Session.on_done(Void*),
@@ -232,6 +252,17 @@ module Fm
     # Checks if the session is currently generating a response.
     def responding? : Bool
       LibFmFfi.fm_session_is_responding(@ptr)
+    end
+
+    # Returns token usage accumulated by this session (macOS 27+).
+    def usage : Usage?
+      Session.extract_usage(LibFmFfi.fm_session_get_usage(@ptr))
+    end
+
+    # Returns token usage for the most recently completed response, including
+    # a streamed or structured response (macOS 27+).
+    def last_usage : Usage?
+      Session.extract_usage(LibFmFfi.fm_session_get_last_usage(@ptr))
     end
 
     # Returns the session transcript as a `Transcript` object.
@@ -270,19 +301,26 @@ module Fm
     # schema = %({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]})
     # json = session.respond_json("Generate a person", schema)
     # ```
-    def respond_json(prompt : String, schema_json : String, options : GenerationOptions = GenerationOptions.default) : String
+    def respond_json(
+      prompt : String,
+      schema_json : String,
+      options : GenerationOptions = GenerationOptions.default,
+      *,
+      context_options : ContextOptions = ContextOptions.default,
+    ) : String
       # Hand-written schemas go through the same normalization as `Generable`
       # ones: without it the native guided-generation path rejects the document
       # and Swift quietly falls back to asking for JSON in the prompt.
       schema = Schema.normalize_json(schema_json)
 
       error = Fm.make_error_ptr
+      request_options = Session.request_options_json(options, context_options)
 
       response_ptr = LibFmFfi.fm_session_respond_json(
         @ptr,
         prompt.to_unsafe,
         schema.to_unsafe,
-        options.to_json.to_unsafe,
+        request_options.to_unsafe,
         error
       )
 
@@ -305,23 +343,37 @@ module Fm
     # person = session.respond_structured(Person, "Generate a fictional person")
     # puts person.name
     # ```
-    def respond_structured(type : T.class, prompt : String, options : GenerationOptions = GenerationOptions.default) : T forall T
+    def respond_structured(
+      type : T.class,
+      prompt : String,
+      options : GenerationOptions = GenerationOptions.default,
+      *,
+      context_options : ContextOptions = ContextOptions.default,
+    ) : T forall T
       schema = T.json_schema.to_json
-      json_str = respond_json(prompt, schema, options)
+      json_str = respond_json(prompt, schema, options, context_options: context_options)
       T.from_json(json_str)
     end
 
     # Streams a structured JSON response matching a schema.
-    def stream_json(prompt : String, schema_json : String, options : GenerationOptions = GenerationOptions.default, &block : String ->) : Nil
+    def stream_json(
+      prompt : String,
+      schema_json : String,
+      options : GenerationOptions = GenerationOptions.default,
+      *,
+      context_options : ContextOptions = ContextOptions.default,
+      &block : String ->
+    ) : Nil
       schema = Schema.normalize_json(schema_json)
       state = StreamState.new(block, -> { cancel })
       boxed = Box(StreamState).box(state)
+      request_options = Session.request_options_json(options, context_options)
 
       LibFmFfi.fm_session_stream_json(
         @ptr,
         prompt.to_unsafe,
         schema.to_unsafe,
-        options.to_json.to_unsafe,
+        request_options.to_unsafe,
         boxed,
         ->Session.on_chunk(Void*, LibC::Char*),
         ->Session.on_done(Void*),
@@ -353,6 +405,36 @@ module Fm
       content = String.new(ptr)
       LibFmFfi.fm_string_free(ptr)
       content
+    end
+
+    # :nodoc:
+    # Usage is advisory: a payload this side cannot parse must not turn a
+    # successful generation into an exception.
+    protected def self.extract_usage(ptr : LibC::Char*) : Usage?
+      return if ptr.null?
+
+      json = String.new(ptr)
+      LibFmFfi.fm_string_free(ptr)
+
+      begin
+        Usage.from_json(json)
+      rescue JSON::ParseException
+        nil
+      end
+    end
+
+    # :nodoc:
+    # FoundationModels keeps generation and context options as separate Swift
+    # values. They share one JSON payload at the C boundary so the existing ABI
+    # remains compatible with clients that call the exported symbols directly.
+    # Without context options the payload is byte-identical to the pre-macOS 27
+    # one, so the native side keeps taking the legacy code path.
+    def self.request_options_json(options : GenerationOptions, context_options : ContextOptions) : String
+      return options.to_json if context_options.empty?
+
+      fields = JSON.parse(options.to_json).as_h
+      fields["contextOptions"] = JSON.parse(context_options.to_json)
+      JSON::Any.new(fields).to_json
     end
 
     # :nodoc:

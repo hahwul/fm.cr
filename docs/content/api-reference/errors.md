@@ -105,6 +105,10 @@ Common fields also have typed accessors:
 | `UnsupportedTranscriptContentError` | `unsupported_content` | `Array(JSON::Any)?` |
 | `DecodingFailureError` | `raw_content`, `underlying_error_message` | `String?` |
 
+`unsupported_content` holds the offending transcript entries encoded the same
+way `Fm::Transcript#to_json` encodes them, so you can inspect which entry the
+model rejected instead of reading a stringified description.
+
 The generic `details` object also contains `version`, `debugDescription`, and
 stringified FoundationModels `metadata` when the framework supplies them.
 

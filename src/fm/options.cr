@@ -1,6 +1,82 @@
 require "json"
 
 module Fm
+  # Controls whether the model may call tools while generating a response.
+  # Available on macOS 27 and later.
+  enum ToolCallingMode
+    Allowed
+    Required
+    Disallowed
+
+    def to_wire : String
+      case self
+      in .allowed?    then "allowed"
+      in .required?   then "required"
+      in .disallowed? then "disallowed"
+      end
+    end
+  end
+
+  # The amount of reasoning the model should use for a request (macOS 27+).
+  # Use `.custom` for provider-specific values.
+  struct ReasoningLevel
+    getter value : String
+
+    private def initialize(@value : String)
+      raise ArgumentError.new("reasoning level must not be empty") if @value.empty?
+    end
+
+    def self.light : self
+      new("light")
+    end
+
+    def self.moderate : self
+      new("moderate")
+    end
+
+    def self.deep : self
+      new("deep")
+    end
+
+    def self.custom(value : String) : self
+      new(value)
+    end
+  end
+
+  # Options that control how a request is added to the model context.
+  # Available on macOS 27 and later.
+  struct ContextOptions
+    getter include_schema_in_prompt : Bool?
+    getter reasoning_level : ReasoningLevel?
+
+    def initialize(
+      @include_schema_in_prompt : Bool? = nil,
+      @reasoning_level : ReasoningLevel? = nil,
+    )
+    end
+
+    def self.default : self
+      new
+    end
+
+    def empty? : Bool
+      @include_schema_in_prompt.nil? && @reasoning_level.nil?
+    end
+
+    def to_json : String
+      JSON.build do |json|
+        json.object do
+          unless (include_schema = @include_schema_in_prompt).nil?
+            json.field "includeSchemaInPrompt", include_schema
+          end
+          if reasoning = @reasoning_level
+            json.field "reasoningLevel", reasoning.value
+          end
+        end
+      end
+    end
+  end
+
   # Sampling strategy for token generation.
   enum Sampling
     # Random sampling with temperature (default).
@@ -105,12 +181,16 @@ module Fm
     # with the same seed produces deterministic output.
     getter seed : UInt64?
 
+    # Tool invocation policy (macOS 27+).
+    getter tool_calling_mode : ToolCallingMode?
+
     def initialize(
       @temperature : Float64? = nil,
       @sampling : Sampling? = nil,
       @sampling_mode : SamplingMode? = nil,
       @max_response_tokens : UInt32? = nil,
       @seed : UInt64? = nil,
+      @tool_calling_mode : ToolCallingMode? = nil,
     )
       if temp = @temperature
         raise ArgumentError.new("temperature must be between 0.0 and 2.0, got #{temp}") unless 0.0 <= temp <= 2.0
@@ -174,6 +254,9 @@ module Fm
           if s = @seed
             mode_seed = mode.try(&.seed)
             json.field "seed", s unless mode_seed
+          end
+          if tool_mode = @tool_calling_mode
+            json.field "toolCallingMode", tool_mode.to_wire
           end
         end
       end

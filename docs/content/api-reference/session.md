@@ -52,7 +52,9 @@ Restores a session from a previously exported transcript JSON string. You can op
 ```crystal
 session.respond(
   prompt : String,
-  options : Fm::GenerationOptions = Fm::GenerationOptions.default
+  options : Fm::GenerationOptions = Fm::GenerationOptions.default,
+  *,
+  context_options : Fm::ContextOptions = Fm::ContextOptions.default
 ) : Fm::Response
 ```
 
@@ -63,11 +65,12 @@ session.respond(
   prompt : String,
   options : Fm::GenerationOptions = Fm::GenerationOptions.default,
   *,
-  timeout : Time::Span
+  timeout : Time::Span,
+  context_options : Fm::ContextOptions = Fm::ContextOptions.default
 ) : Fm::Response
 ```
 
-Overload with a timeout. Raises `Fm::TimeoutError` if the timeout is exceeded.
+Overload with a timeout. Raises `Fm::TimeoutError` if the timeout is exceeded. `context_options` is available on macOS 27 and controls schema inclusion and reasoning level.
 
 ### `#stream`
 
@@ -75,6 +78,8 @@ Overload with a timeout. Raises `Fm::TimeoutError` if the timeout is exceeded.
 session.stream(
   prompt : String,
   options : Fm::GenerationOptions = Fm::GenerationOptions.default,
+  *,
+  context_options : Fm::ContextOptions = Fm::ContextOptions.default,
   &block : String ->
 ) : Nil
 ```
@@ -87,7 +92,9 @@ Sends a prompt and streams the response. The block receives each text chunk as i
 session.respond_json(
   prompt : String,
   schema_json : String,
-  options : Fm::GenerationOptions = Fm::GenerationOptions.default
+  options : Fm::GenerationOptions = Fm::GenerationOptions.default,
+  *,
+  context_options : Fm::ContextOptions = Fm::ContextOptions.default
 ) : String
 ```
 
@@ -99,7 +106,9 @@ Returns a JSON string conforming to the given schema.
 session.respond_structured(
   type : T.class,
   prompt : String,
-  options : Fm::GenerationOptions = Fm::GenerationOptions.default
+  options : Fm::GenerationOptions = Fm::GenerationOptions.default,
+  *,
+  context_options : Fm::ContextOptions = Fm::ContextOptions.default
 ) : T forall T
 ```
 
@@ -112,6 +121,8 @@ session.stream_json(
   prompt : String,
   schema_json : String,
   options : Fm::GenerationOptions = Fm::GenerationOptions.default,
+  *,
+  context_options : Fm::ContextOptions = Fm::ContextOptions.default,
   &block : String ->
 ) : Nil
 ```
@@ -163,9 +174,35 @@ A struct wrapping the model's text output.
 | Property | Type | Description |
 |----------|------|-------------|
 | `content` | `String` | The generated text content |
+| `usage` | `Fm::Usage?` | Per-response token usage on macOS 27; otherwise `nil` |
 
 ```crystal
 response = session.respond("Hello")
 puts response.content
 puts response.to_s  # Same as response.content
 ```
+
+### `Fm::ContextOptions`
+
+```crystal
+context = Fm::ContextOptions.new(
+  include_schema_in_prompt: true,
+  reasoning_level: Fm::ReasoningLevel.deep
+)
+response = session.respond("Solve this carefully", context_options: context)
+```
+
+Reasoning levels are `Fm::ReasoningLevel.light`, `.moderate`, `.deep`, or `.custom(value)`. These options require macOS 27. Structured generation keeps FoundationModels' default schema-in-prompt behavior unless you explicitly override it.
+
+### `Fm::Usage`
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `input_tokens` | `Int64` | Tokens in the request |
+| `cached_input_tokens` | `Int64` | Input tokens served from cache |
+| `output_tokens` | `Int64` | Tokens the model generated |
+| `reasoning_tokens` | `Int64` | Output tokens spent on reasoning |
+| `total_tokens` | `Int64` | Input plus output tokens |
+| `metadata` | `JSON::Any?` | Model-specific usage metadata, when reported |
+
+`session.usage` returns cumulative session usage and `session.last_usage` returns the latest completed blocking, structured, or streamed response usage. Both return `nil` before macOS 27, as does `Fm::Response#usage`.

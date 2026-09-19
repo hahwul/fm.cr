@@ -6,7 +6,7 @@ weight = 4
 
 ## Overview
 
-`Fm::GenerationOptions` controls how the model generates responses, including temperature, sampling strategy, and maximum token count.
+`Fm::GenerationOptions` controls how the model generates responses, including temperature, sampling strategy, maximum token count, and the macOS 27 tool-calling policy.
 
 ## Constructor
 
@@ -15,7 +15,8 @@ Fm::GenerationOptions.new(
   temperature : Float64? = nil,
   sampling : Fm::Sampling? = nil,
   max_response_tokens : UInt32? = nil,
-  seed : UInt64? = nil
+  seed : UInt64? = nil,
+  tool_calling_mode : Fm::ToolCallingMode? = nil
 )
 ```
 
@@ -27,6 +28,7 @@ All parameters are optional. When `nil`, the model uses its default values.
 | `sampling` | `Sampling?` | `nil` | Sampling strategy |
 | `max_response_tokens` | `UInt32?` | `nil` | Maximum tokens in the response |
 | `seed` | `UInt64?` | `nil` | Random seed for reproducible output |
+| `tool_calling_mode` | `ToolCallingMode?` | `nil` | Allow, require, or disallow tool calls (macOS 27+) |
 
 ## Class Methods
 
@@ -46,6 +48,17 @@ Returns an instance with all parameters set to `nil`, using the model's defaults
 | `sampling` | `Sampling?` | The sampling strategy to use. |
 | `max_response_tokens` | `UInt32?` | Limits the length of the generated response. |
 | `seed` | `UInt64?` | Random seed for reproducible output. |
+| `tool_calling_mode` | `ToolCallingMode?` | Controls whether tools may be invoked (macOS 27+). |
+
+## Fm::ToolCallingMode
+
+| Value | Description |
+|-------|-------------|
+| `Allowed` | The model may call a tool or answer directly (default framework behavior) |
+| `Required` | The model must call a tool |
+| `Disallowed` | The model must not call a tool |
+
+`Required` can keep selecting tools indefinitely when no tool provides an exit condition. Design required-tool workflows so at least one tool result lets the model finish.
 
 ## Fm::Sampling
 
