@@ -173,13 +173,7 @@ options = Fm::GenerationOptions.new(
   tool_calling_mode: Fm::ToolCallingMode::Allowed # macOS 27+
 )
 
-response = session.respond(
-  "Write a haiku.",
-  options,
-  context_options: Fm::ContextOptions.new(
-    reasoning_level: Fm::ReasoningLevel.moderate # macOS 27+
-  )
-)
+response = session.respond("Write a haiku.", options)
 if usage = response.usage
   puts "Used #{usage.total_tokens} tokens"
 end
