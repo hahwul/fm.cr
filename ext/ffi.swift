@@ -643,11 +643,22 @@ final class ToolDispatcher: @unchecked Sendable {
     }
 
     func callTool(name: String, argumentsJson: String) throws -> String {
-        // Call Crystal callback
-        let resultPtr = name.withCString { namePtr in
-            argumentsJson.withCString { argsPtr in
-                callback(userData, namePtr, argsPtr)
+        // Call Crystal callback on the Crystal thread waiting for this request.
+        guard let ticket = CallbackTicket.current else {
+            throw ToolError(message: "Tool called outside a request", toolName: name, toolArguments: argumentsJson)
+        }
+
+        var resultPtr: UnsafeMutablePointer<CChar>?
+        let ran = ticket.perform {
+            resultPtr = name.withCString { namePtr in
+                argumentsJson.withCString { argsPtr in
+                    self.callback(self.userData, namePtr, argsPtr)
+                }
             }
+        }
+
+        guard ran else {
+            throw ToolError(message: "Tool call abandoned: the request is no longer waiting", toolName: name, toolArguments: argumentsJson)
         }
 
         guard let resultPtr = resultPtr else {
@@ -1237,10 +1248,9 @@ public func fm_session_stream(
 
     let contextOptionsDTO = parseContextOptionsDTO(optionsJson)
 
-    let callbackQueue = DispatchQueue(label: "fm.ffi.callbacks", qos: .userInteractive)
-    let semaphore = DispatchSemaphore(value: 0)
+    let ticket = CallbackTicket()
 
-    let task = Task.detached {
+    let task = ticket.start {
         do {
 #if compiler(>=6.4)
             let stream: LanguageModelSession.ResponseStream<String>
@@ -1268,7 +1278,7 @@ public func fm_session_stream(
                 previousContent = content
 
                 if !delta.isEmpty {
-                    callbackQueue.sync {
+                    ticket.perform {
                         delta.withCString { ptr in
                             onChunk(userData, ptr)
                         }
@@ -1276,21 +1286,21 @@ public func fm_session_stream(
                 }
 
                 if Task.isCancelled {
-                    callbackQueue.sync {
+                    ticket.perform {
                         "Cancelled".withCString { ptr in
                             onError(userData, FFIErrorCode.cancelled.rawValue, ptr, nil)
                         }
                     }
-                    semaphore.signal()
+                    ticket.finish()
                     return
                 }
             }
 
-            callbackQueue.sync {
+            ticket.perform {
                 onDone(userData)
             }
         } catch {
-            callbackQueue.sync {
+            ticket.perform {
                 let (errorCode, errorMessage, detailsJSON) = mapStreamingError(error)
                 invokeStreamErrorCallback(
                     onError,
@@ -1302,11 +1312,11 @@ public func fm_session_stream(
             }
         }
 
-        semaphore.signal()
+        ticket.finish()
     }
 
     state.setTask(task)
-    semaphore.wait()
+    ticket.wait()
     state.setTask(nil)
 }
 
@@ -1739,10 +1749,9 @@ public func fm_session_stream_json(
 
     let contextOptionsDTO = parseContextOptionsDTO(optionsJson)
 
-    let callbackQueue = DispatchQueue(label: "fm.ffi.callbacks.json", qos: .userInteractive)
-    let semaphore = DispatchSemaphore(value: 0)
+    let ticket = CallbackTicket()
 
-    let task = Task.detached {
+    let task = ticket.start {
         do {
             if let schema = schema {
                 // Native GenerationSchema API
@@ -1777,18 +1786,18 @@ public func fm_session_stream_json(
                     previousContent = content
 
                     if !delta.isEmpty {
-                        callbackQueue.sync {
+                        ticket.perform {
                             delta.withCString { ptr in onChunk(userData, ptr) }
                         }
                     }
 
                     if Task.isCancelled {
-                        callbackQueue.sync {
+                        ticket.perform {
                             "Cancelled".withCString { ptr in
                                 onError(userData, FFIErrorCode.cancelled.rawValue, ptr, nil)
                             }
                         }
-                        semaphore.signal()
+                        ticket.finish()
                         return
                     }
                 }
@@ -1830,28 +1839,28 @@ public func fm_session_stream_json(
                     previousContent = content
 
                     if !delta.isEmpty {
-                        callbackQueue.sync {
+                        ticket.perform {
                             delta.withCString { ptr in onChunk(userData, ptr) }
                         }
                     }
 
                     if Task.isCancelled {
-                        callbackQueue.sync {
+                        ticket.perform {
                             "Cancelled".withCString { ptr in
                                 onError(userData, FFIErrorCode.cancelled.rawValue, ptr, nil)
                             }
                         }
-                        semaphore.signal()
+                        ticket.finish()
                         return
                     }
                 }
             }
 
-            callbackQueue.sync {
+            ticket.perform {
                 onDone(userData)
             }
         } catch {
-            callbackQueue.sync {
+            ticket.perform {
                 let (errorCode, errorMessage, detailsJSON) = mapStreamingError(error)
                 invokeStreamErrorCallback(
                     onError,
@@ -1863,11 +1872,11 @@ public func fm_session_stream_json(
             }
         }
 
-        semaphore.signal()
+        ticket.finish()
     }
 
     state.setTask(task)
-    semaphore.wait()
+    ticket.wait()
     state.setTask(nil)
 }
 
@@ -1954,27 +1963,124 @@ public func fm_string_free(_ s: UnsafeMutablePointer<CChar>?) {
 
 // MARK: - Async Helpers
 
+/// One blocking FFI call: runs its Crystal callbacks on the Crystal thread
+/// that is blocked in `wait` for it.
+///
+/// Swift concurrency runs work on threads the Crystal runtime never created,
+/// and a Crystal callback invoked on one segfaults as soon as it touches the
+/// runtime (IO, `sleep`, anything reaching `Thread.current`). So callbacks are
+/// queued on the ticket of the request that raised them and run by its caller.
+final class CallbackTicket: @unchecked Sendable {
+    /// The ticket of the request whose task is running. Tools reach their
+    /// request through this, since FoundationModels calls them in that task.
+    @TaskLocal static var current: CallbackTicket?
+
+    private final class Job {
+        let body: () -> Void
+        var ran = false
+        let finished = DispatchSemaphore(value: 0)
+
+        init(_ body: @escaping () -> Void) { self.body = body }
+    }
+
+    private let lock = NSLock()
+    private let wakeup = DispatchSemaphore(value: 0)
+    private var jobs: [Job] = []
+    private var done = false
+    private var closed = false
+
+    /// Starts `work` in a detached task bound to this ticket.
+    @discardableResult
+    func start(_ work: sending @escaping () async -> Void) -> Task<Void, Never> {
+        Task.detached {
+            await CallbackTicket.$current.withValue(self) { await work() }
+        }
+    }
+
+    /// Marks the work finished, releasing `wait`.
+    func finish() {
+        lock.lock()
+        done = true
+        lock.unlock()
+        wakeup.signal()
+    }
+
+    /// Blocks until `finish`, running queued callbacks on this thread
+    /// meanwhile. Returns false if `deadline` passes first; callbacks raised
+    /// after that are refused rather than left blocked forever.
+    @discardableResult
+    func wait(deadline: DispatchTime = .distantFuture) -> Bool {
+        defer {
+            lock.lock()
+            closed = true
+            let abandoned = jobs
+            jobs.removeAll()
+            lock.unlock()
+            abandoned.forEach { $0.finished.signal() }
+        }
+
+        while true {
+            lock.lock()
+            if !jobs.isEmpty, DispatchTime.now() < deadline {
+                let job = jobs.removeFirst()
+                lock.unlock()
+                job.body()
+                job.ran = true
+                job.finished.signal()
+                continue
+            }
+            let isDone = done
+            lock.unlock()
+
+            if isDone { return true }
+            if wakeup.wait(timeout: deadline) == .timedOut {
+                lock.lock()
+                defer { lock.unlock() }
+                return done
+            }
+        }
+    }
+
+    /// Runs `body` on the waiting Crystal thread and blocks until it returns.
+    /// Returns false, without running it, once the caller stopped waiting.
+    @discardableResult
+    func perform(_ body: @escaping () -> Void) -> Bool {
+        let job = Job(body)
+        lock.lock()
+        guard !closed else {
+            lock.unlock()
+            return false
+        }
+        jobs.append(job)
+        lock.unlock()
+        wakeup.signal()
+
+        job.finished.wait()
+        return job.ran
+    }
+}
+
 /// Helper for synchronously running Swift async code.
 final class AsyncWaiter {
     private final class AsyncState<T: Sendable>: @unchecked Sendable {
         var result: Result<T, Error>?
-        let semaphore = DispatchSemaphore(value: 0)
+        let ticket = CallbackTicket()
     }
 
     static func wait<T: Sendable>(_ operation: @escaping @Sendable () async throws -> T) throws -> T {
         let state = AsyncState<T>()
 
-        Task.detached {
+        state.ticket.start {
             do {
                 let value = try await operation()
                 state.result = .success(value)
             } catch {
                 state.result = .failure(error)
             }
-            state.semaphore.signal()
+            state.ticket.finish()
         }
 
-        state.semaphore.wait()
+        state.ticket.wait()
 
         switch state.result {
         case .success(let value):
@@ -1991,18 +2097,18 @@ final class AsyncWaiter {
         _ operation: @escaping @Sendable () async throws -> T
     ) throws -> T {
         let state = AsyncState<T>()
-        let task = Task.detached {
+        let task = state.ticket.start {
             do {
                 let value = try await operation()
                 state.result = .success(value)
             } catch {
                 state.result = .failure(error)
             }
-            state.semaphore.signal()
+            state.ticket.finish()
         }
 
         let timeoutMsInt = timeoutMs > UInt64(Int.max) ? Int.max : Int(timeoutMs)
-        if state.semaphore.wait(timeout: .now() + .milliseconds(timeoutMsInt)) == .timedOut {
+        if !state.ticket.wait(deadline: .now() + .milliseconds(timeoutMsInt)) {
             task.cancel()
             throw TimeoutError(message: "Timed out after \(timeoutMs) ms")
         }

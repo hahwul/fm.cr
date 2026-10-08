@@ -70,7 +70,7 @@ session.respond(
 ) : Fm::Response
 ```
 
-Overload with a timeout. Raises `Fm::TimeoutError` if the timeout is exceeded. `context_options` is available on macOS 27 and controls schema inclusion and reasoning level.
+Overload with a timeout. Raises `Fm::TimeoutError` if the timeout is exceeded; tools run on the calling thread, so a timeout that expires while one runs is reported once it returns. `context_options` is available on macOS 27 and controls schema inclusion and reasoning level.
 
 ### `#stream`
 
@@ -185,14 +185,11 @@ puts response.to_s  # Same as response.content
 ### `Fm::ContextOptions`
 
 ```crystal
-context = Fm::ContextOptions.new(
-  include_schema_in_prompt: true,
-  reasoning_level: Fm::ReasoningLevel.deep
-)
+context = Fm::ContextOptions.new(include_schema_in_prompt: true)
 response = session.respond("Solve this carefully", context_options: context)
 ```
 
-Reasoning levels are `Fm::ReasoningLevel.light`, `.moderate`, `.deep`, or `.custom(value)`. These options require macOS 27. Structured generation keeps FoundationModels' default schema-in-prompt behavior unless you explicitly override it.
+Reasoning levels are `Fm::ReasoningLevel.light`, `.moderate`, `.deep`, or `.custom(value)`. These options require macOS 27. The on-device system model has no reasoning capability, so a `reasoning_level` raises `Fm::UnsupportedCapabilityError` there. Structured generation keeps FoundationModels' default schema-in-prompt behavior unless you explicitly override it.
 
 ### `Fm::Usage`
 

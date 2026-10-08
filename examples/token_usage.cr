@@ -43,15 +43,15 @@ else
   puts "Token usage API not available on this OS version."
 end
 
-# macOS 27+: FoundationModels reports exact token usage per response, and lets
-# you steer how much reasoning a request gets. Both are `nil` / ignored on
-# macOS 26, so the same code keeps working there.
+# macOS 27+: FoundationModels reports exact token usage per response. It is
+# `nil` on macOS 26, so the same code keeps working there. (`reasoning_level`
+# is left out: the on-device model has no reasoning capability and raises
+# `Fm::UnsupportedCapabilityError` if asked for it.)
 session = Fm::Session.new(model, instructions: "You are a helpful assistant. Be concise.")
 
 response = session.respond(
   "Summarize the water cycle in one sentence.",
-  Fm::GenerationOptions.new(tool_calling_mode: Fm::ToolCallingMode::Disallowed),
-  context_options: Fm::ContextOptions.new(reasoning_level: Fm::ReasoningLevel.light)
+  Fm::GenerationOptions.new(tool_calling_mode: Fm::ToolCallingMode::Disallowed)
 )
 puts "Response: #{response.content}"
 
@@ -64,10 +64,7 @@ else
 end
 
 # Streaming reports usage too — read it once the stream is done.
-session.stream(
-  "Name one river.",
-  context_options: Fm::ContextOptions.new(reasoning_level: Fm::ReasoningLevel.light)
-) { |chunk| print chunk }
+session.stream("Name one river.") { |chunk| print chunk }
 puts
 
 if usage = session.last_usage
@@ -87,9 +84,9 @@ struct Fact
   getter claim : String
 end
 
-deep = Fm::ContextOptions.new(reasoning_level: Fm::ReasoningLevel.deep)
+context = Fm::ContextOptions.new(include_schema_in_prompt: true)
 
-fact = session.respond_structured(Fact, "State one fact about tides.", context_options: deep)
+fact = session.respond_structured(Fact, "State one fact about tides.", context_options: context)
 puts "Fact: #{fact.claim}"
 puts "Structured response used #{session.last_usage.try(&.total_tokens) || 0} tokens"
 
@@ -97,7 +94,7 @@ begin
   reply = session.respond(
     "Name one tide-related term.",
     timeout: 10.seconds,
-    context_options: deep
+    context_options: context
   )
   puts "Reply: #{reply.content}"
 rescue ex : Fm::TimeoutError
@@ -107,6 +104,6 @@ end
 session.stream_json(
   "Give one tide fact.",
   Fact.json_schema.to_json,
-  context_options: deep
+  context_options: context
 ) { |chunk| print chunk }
 puts
