@@ -183,6 +183,8 @@ module Fm
     # A zero timeout means "no timeout" and delegates to `#respond`. Any other
     # positive `timeout` is honoured, rounded up to the 1 ms resolution of the
     # underlying FFI call. A negative `timeout` raises `ArgumentError`.
+    # Tools run on the calling thread, so a timeout that expires while one is
+    # running is reported once that tool returns.
     def respond(
       prompt : String,
       options : GenerationOptions = GenerationOptions.default,
@@ -495,10 +497,10 @@ module Fm
       # this side of the FFI boundary.
       #
       # A Crystal exception must never unwind through the Swift frame that
-      # invoked this callback: that frame runs inside a `DispatchQueue.sync` on
-      # a detached task and owns the semaphore `fm_session_stream` is blocked
-      # on, so unwinding past it aborts the process (and would otherwise leave
-      # the FFI call waiting forever). Record the exception instead, stop
+      # invoked this callback: that frame is the native callback pump inside
+      # `fm_session_stream`, with a detached task blocked on its result, so
+      # unwinding past it aborts the process (and would otherwise leave the
+      # task waiting forever). Record the exception instead, stop
       # delivering, and ask the session to cancel so the FFI call returns
       # promptly; `#raise_if_error!` re-raises it to the caller afterwards.
       def deliver(chunk : String) : Nil
