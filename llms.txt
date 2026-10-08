@@ -1,0 +1,29 @@
+# fm.cr
+
+> Crystal bindings for Apple FoundationModels.framework
+
+This is the documentation for fm.cr, Crystal bindings for Apple FoundationModels.framework.
+
+## Pages
+
+- [fm.cr](https://fm.cr.hahwul.com/): Crystal bindings for Apple FoundationModels.framework
+
+## API Reference
+
+- [Context](https://fm.cr.hahwul.com/api-reference/context/): Context window management and session compaction
+- [Errors](https://fm.cr.hahwul.com/api-reference/errors/): Error types and exception handling
+- [Generable & Guide](https://fm.cr.hahwul.com/api-reference/generable/): Type-safe structured output with schema generation
+- [GenerationOptions](https://fm.cr.hahwul.com/api-reference/generation-options/): Control generation parameters
+- [Session](https://fm.cr.hahwul.com/api-reference/session/): Conversation session management
+- [SystemLanguageModel](https://fm.cr.hahwul.com/api-reference/system-language-model/): The on-device language model interface
+- [Tools](https://fm.cr.hahwul.com/api-reference/tools/): Tool calling API reference
+
+## User Guide
+
+- [Basic Usage](https://fm.cr.hahwul.com/user-guide/basic-usage/): Models, sessions, and generating responses
+- [Context Management](https://fm.cr.hahwul.com/user-guide/context-management/): Transcripts, token estimation, and session compaction
+- [Getting Started](https://fm.cr.hahwul.com/user-guide/getting-started/): Prerequisites, installation, and your first fm.cr program
+- [Streaming](https://fm.cr.hahwul.com/user-guide/streaming/): Stream responses from the model in real time
+- [Structured Output](https://fm.cr.hahwul.com/user-guide/structured-output/): Type-safe responses with Generable and JSON schemas
+- [Tool Calling](https://fm.cr.hahwul.com/user-guide/tool-calling/): Extend model capabilities with custom tools
+
