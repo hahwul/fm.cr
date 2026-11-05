@@ -89,7 +89,9 @@ module Fm
     # Creates a session from a transcript JSON string.
     #
     # Optionally restores instructions, tools, and adapters so the
-    # resumed session behaves identically to the original.
+    # resumed session behaves identically to the original. `instructions`
+    # apply only when the transcript does not already contain an
+    # instructions entry; one that does keeps its own.
     #
     # ```
     # json = session.transcript_json

@@ -142,7 +142,7 @@ private func createError(
 
 /// Creates an error object from a Swift Error, extracting tool context if available.
 private func createErrorFromException(_ error: Error, defaultCode: FFIErrorCode = .generationFailed) -> UnsafeMutableRawPointer {
-    if let toolError = error as? ToolError {
+    if let toolError = toolError(from: error) {
         return createError(
             toolError.message,
             code: .toolError,
@@ -156,6 +156,21 @@ private func createErrorFromException(_ error: Error, defaultCode: FFIErrorCode 
     } else {
         return createError(error.localizedDescription, code: defaultCode)
     }
+}
+
+/// Returns the bridge's `ToolError` behind `error`, if any.
+///
+/// FoundationModels does not propagate an error thrown from `Tool.call` as is:
+/// it wraps it in `LanguageModelSession.ToolCallError`. Without unwrapping,
+/// every tool failure surfaced as a generic generation error and lost its
+/// tool name and arguments.
+private func toolError(from error: Error) -> ToolError? {
+    if let toolError = error as? ToolError { return toolError }
+    if let callError = error as? LanguageModelSession.ToolCallError {
+        return callError.underlyingError as? ToolError
+            ?? ToolError(message: callError.underlyingError.localizedDescription, toolName: callError.tool.name)
+    }
+    return nil
 }
 
 /// Maps errors from both the macOS 26 and macOS 27 FoundationModels error
@@ -379,6 +394,11 @@ private func mapGenerationError(_ error: LanguageModelSession.GenerationError) -
 
 func createGenerationErrorFromException(_ error: Error) -> UnsafeMutableRawPointer {
     createErrorFromException(error)
+}
+
+/// Creates an `.invalidInput` error for caller-supplied JSON that failed to decode.
+func createInvalidInputError(_ message: String) -> UnsafeMutableRawPointer {
+    createError(message, code: .invalidInput)
 }
 
 // MARK: - SystemLanguageModel
@@ -910,8 +930,9 @@ func parseToolDefinitions(_ toolsJson: UnsafePointer<CChar>?) throws -> [ToolDef
     }
 }
 
-private struct ToolDefinitionError: Error {
+private struct ToolDefinitionError: Error, LocalizedError {
     let message: String
+    var errorDescription: String? { message }
 }
 
 // MARK: - Session State
@@ -1089,7 +1110,7 @@ public func fm_session_from_transcript(
         toolDefinitions = try parseToolDefinitions(toolsJson)
     } catch {
         if let errorOut = errorOut {
-            errorOut.pointee = createError("Failed to decode tools JSON: \(error.localizedDescription)", code: .invalidInput)
+            errorOut.pointee = createError(error.localizedDescription, code: .invalidInput)
         }
         return nil
     }
@@ -1105,7 +1126,19 @@ public func fm_session_from_transcript(
     }
 
     do {
-        let transcript = try JSONDecoder().decode(Transcript.self, from: jsonData)
+        var transcript = try JSONDecoder().decode(Transcript.self, from: jsonData)
+
+        // `LanguageModelSession(model:tools:transcript:)` takes no instructions,
+        // so apply them as the leading transcript entry. A transcript that
+        // already has instructions keeps its own.
+        let hasInstructions = transcript.contains { if case .instructions = $0 { true } else { false } }
+        if let instructions, !hasInstructions {
+            let entry = Transcript.Instructions(
+                segments: [.text(Transcript.TextSegment(content: String(cString: instructions)))],
+                toolDefinitions: toolsArray.map { Transcript.ToolDefinition(tool: $0) }
+            )
+            transcript = Transcript(entries: [.instructions(entry)] + Array(transcript))
+        }
 
         let session: LanguageModelSession
         if !toolsArray.isEmpty {
@@ -1882,7 +1915,7 @@ public func fm_session_stream_json(
 
 /// Maps a streaming error to an FFI error code and message, with full error differentiation.
 private func mapStreamingError(_ error: Error) -> (Int32, String, String?) {
-    if let toolError = error as? ToolError {
+    if let toolError = toolError(from: error) {
         var msg = toolError.message
         if let name = toolError.toolName {
             msg += " [tool: \(name)]"
