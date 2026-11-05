@@ -75,11 +75,19 @@ public func fm_model_token_usage_for_transcript(
     let jsonString = String(cString: transcriptJson)
 
     if #available(iOS 26.4, macOS 26.4, visionOS 26.4, *) {
+        // Malformed transcript JSON is caller input: report it as invalid
+        // input, the same as `fm_session_from_transcript` does.
+        let transcript: Transcript
         do {
-            guard let jsonData = jsonString.data(using: .utf8) else {
-                throw TokenUsageError(message: "Invalid UTF-8 in transcript JSON")
-            }
-            let transcript = try JSONDecoder().decode(Transcript.self, from: jsonData)
+            transcript = try JSONDecoder().decode(Transcript.self, from: Data(jsonString.utf8))
+        } catch {
+            errorOut?.pointee = createInvalidInputError(
+                "Failed to decode transcript: \(error.localizedDescription)"
+            )
+            return -1
+        }
+
+        do {
             let tokenCount = try AsyncWaiter.wait {
                 try await model.tokenCount(for: transcript)
             }
@@ -112,8 +120,15 @@ public func fm_model_token_usage_for_tools(
     let instructionsString = String(cString: instructions)
 
     if #available(iOS 26.4, macOS 26.4, visionOS 26.4, *) {
+        let tools: [any Tool]
         do {
-            let tools = try tokenUsageTools(from: toolsJson)
+            tools = try tokenUsageTools(from: toolsJson)
+        } catch {
+            errorOut?.pointee = createInvalidInputError(error.localizedDescription)
+            return -1
+        }
+
+        do {
             let tokenCount = try AsyncWaiter.wait {
                 let instructionsCount = try await model.tokenCount(for: Instructions(instructionsString))
                 guard !tools.isEmpty else { return instructionsCount }
