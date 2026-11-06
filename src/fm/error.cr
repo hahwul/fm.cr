@@ -313,12 +313,16 @@ module Fm
     return GenerationError.new(message, details: details) unless error_code
 
     # No FFI error pointer here: the native side puts the tool context in the
-    # details JSON instead (`toolName` / `toolArguments`).
-    context = details.try(&.as_h?)
-    exception_for(error_code, message,
-      tool_name: context.try(&.["toolName"]?).try(&.as_s?),
-      tool_args: context.try(&.["toolArguments"]?).try(&.as_s?),
-      details: details)
+    # details JSON instead (`toolName` / `toolArguments`). It is not framework
+    # diagnostics, so like `respond` the `ToolCallError` carries no `details`.
+    if error_code.tool_call?
+      context = details.try(&.as_h?)
+      return exception_for(error_code, message,
+        tool_name: context.try(&.["toolName"]?).try(&.as_s?),
+        tool_args: context.try(&.["toolArguments"]?).try(&.as_s?))
+    end
+
+    exception_for(error_code, message, details: details)
   end
 
   private def self.parse_error_details(details_json : String?) : JSON::Any?

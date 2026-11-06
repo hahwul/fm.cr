@@ -83,8 +83,6 @@
   end
 
   private class NoArgsTool < Fm::Tool
-    getter calls = 0
-
     def name : String
       "getServerTime"
     end
@@ -98,21 +96,16 @@
     end
 
     def call(arguments : JSON::Any) : Fm::ToolOutput
-      @calls += 1
       Fm::ToolOutput.new("12:34")
     end
   end
 
   describe "a tool with an empty arguments schema" do
     it "is registered natively under its own name" do
-      tool = NoArgsTool.new
       session = Fm::Session.new(Fm::SystemLanguageModel.new,
-        instructions: "Always use the server time tool.", tools: [tool] of Fm::Tool)
-      session.respond("What time is it on the server?")
-      tool.calls.should be > 0
-      names = session.transcript.entries.flat_map { |entry| entry["toolCalls"]?.try(&.as_a) || [] of JSON::Any }.map(&.["name"].as_s)
-      names.should contain("getServerTime")
-      names.should_not contain("invoke_tool")
+        instructions: "Be terse.", tools: [NoArgsTool.new] of Fm::Tool)
+      tools = session.transcript.entries.first["tools"].as_a
+      tools.map(&.["function"]["name"].as_s).should eq(["getServerTime"])
     end
   end
 

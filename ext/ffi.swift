@@ -1918,7 +1918,7 @@ private func mapStreamingError(_ error: Error) -> (Int32, String, String?) {
     if let toolError = toolError(from: error) {
         // The stream callback has no error object to carry the tool context,
         // so it rides in the details JSON; `Fm.error_from_stream` reads it back.
-        var context: [String: Any] = ["version": 1]
+        var context: [String: Any] = [:]
         context["toolName"] = toolError.toolName
         context["toolArguments"] = toolError.toolArguments
         let detailsJSON = (try? JSONSerialization.data(withJSONObject: context, options: [.sortedKeys]))

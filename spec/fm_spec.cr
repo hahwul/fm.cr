@@ -1755,8 +1755,9 @@ describe Fm do
       err = Fm.error_from_stream(
         Fm::GenerationErrorCode::ToolCall.value,
         "tool failed",
-        %({"version":1,"toolName":"checkWeather","toolArguments":"{\\"location\\":\\"Tokyo\\"}"})
+        %({"toolName":"checkWeather","toolArguments":"{\\"location\\":\\"Tokyo\\"}"})
       ).as(Fm::ToolCallError)
+      err.details.should be_nil
       err.tool_name.should eq("checkWeather")
       err.arguments_json.should eq(%({"location":"Tokyo"}))
       err.message.should eq("Tool 'checkWeather' failed: tool failed")
@@ -2254,10 +2255,17 @@ describe Fm do
       end
     end
 
-    it "leaves a map or non-object arguments schema alone" do
-      map = JSON.parse(%({"type":"object","additionalProperties":{"type":"string"}}))
-      Fm::Schema.normalize_arguments(map, "t")["properties"]?.should be_nil
-      Fm::Schema.normalize_arguments(JSON.parse(%({"type":"string"})), "t").to_json.should eq(%({"type":"string"}))
+    it "leaves an arguments schema that may carry fields alone" do
+      [
+        %({"type":"object","additionalProperties":{"type":"string"}}),
+        %({"type":"object","additionalProperties":true}),
+        %({"type":"object","patternProperties":{"^x":{"type":"string"}}}),
+        %({"allOf":[{"properties":{"a":{"type":"string"}}}]}),
+        %({"type":"object","required":["city"]}),
+        %({"type":"string"}),
+      ].each do |raw|
+        Fm::Schema.normalize_arguments(JSON.parse(raw), "t")["properties"]?.should be_nil
+      end
     end
 
     it "normalizes a tool's arguments schema so Swift can register it natively" do
