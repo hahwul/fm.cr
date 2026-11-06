@@ -17,7 +17,7 @@ module Fm
   #   @[Fm::Guide(minimum: 0, maximum: 10)]
   #   getter score : Int32
   #
-  #   @[Fm::Guide(pattern: "^[A-Z]")]
+  #   @[Fm::Guide(description: "Director's full name")]
   #   getter director : String
   #
   #   @[Fm::Guide(min_items: 1, max_items: 5)]
@@ -30,7 +30,10 @@ module Fm
   # - `constant` : Fix a field to a single constant value (JSON Schema "const")
   # - `minimum` : Minimum numeric value (JSON Schema "minimum")
   # - `maximum` : Maximum numeric value (JSON Schema "maximum")
-  # - `pattern` : Regex pattern for string values (JSON Schema "pattern")
+  # - `pattern` : Regex pattern for string values (JSON Schema "pattern").
+  #   On macOS 27.2 the system model rejects every `pattern` guide with
+  #   `Fm::UnsupportedGuideError` (even one declared natively in Swift); it is
+  #   kept because it may work on other OS versions.
   # - `min_items` : Minimum array length (JSON Schema "minItems")
   # - `max_items` : Maximum array length (JSON Schema "maxItems")
   # - `count` : Exact array length (sets both minItems and maxItems)

@@ -37,6 +37,29 @@ module Fm
       JSON::Any.new(normalize_node(node, title))
     end
 
+    # Keys that give a node a shape of its own.
+    private SHAPE_KEYS = %w[properties anyOf oneOf $ref const enum items]
+
+    # Normalizes a tool's arguments schema.
+    #
+    # A tool always receives an object, so a schema that describes no shape
+    # (`{}`, `{"type":"object"}`, one carrying only a `description`) means "no
+    # arguments". `GenerationSchema` rejects a node without `type`, which used
+    # to drop such a tool to the generic `invoke_tool` bridge; spell it as an
+    # explicit empty object so it is registered natively.
+    def self.normalize_arguments(schema : JSON::Any, title : String) : JSON::Any
+      if (node = schema.as_h?) &&
+         node.fetch("type", "object") == "object" &&
+         SHAPE_KEYS.none? { |key| node.has_key?(key) } &&
+         !node["additionalProperties"]?.try(&.as_h?)
+        schema = JSON::Any.new(node.merge({
+          "type"       => JSON::Any.new("object"),
+          "properties" => JSON::Any.new({} of String => JSON::Any),
+        }))
+      end
+      normalize(schema, title)
+    end
+
     # Normalizes a raw JSON schema string.
     #
     # Input that is not parseable JSON is returned unchanged rather than

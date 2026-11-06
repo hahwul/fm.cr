@@ -66,7 +66,7 @@ module Fm
               json.field "name", tool.name
               json.field "description", tool.description
               json.field "argumentsSchema" do
-                json.raw Schema.normalize(tool.arguments_schema, tool.name).to_json
+                json.raw Schema.normalize_arguments(tool.arguments_schema, tool.name).to_json
               end
             end
           end

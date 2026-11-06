@@ -1916,11 +1916,14 @@ public func fm_session_stream_json(
 /// Maps a streaming error to an FFI error code and message, with full error differentiation.
 private func mapStreamingError(_ error: Error) -> (Int32, String, String?) {
     if let toolError = toolError(from: error) {
-        var msg = toolError.message
-        if let name = toolError.toolName {
-            msg += " [tool: \(name)]"
-        }
-        return (FFIErrorCode.toolError.rawValue, msg, nil)
+        // The stream callback has no error object to carry the tool context,
+        // so it rides in the details JSON; `Fm.error_from_stream` reads it back.
+        var context: [String: Any] = ["version": 1]
+        context["toolName"] = toolError.toolName
+        context["toolArguments"] = toolError.toolArguments
+        let detailsJSON = (try? JSONSerialization.data(withJSONObject: context, options: [.sortedKeys]))
+            .flatMap { String(data: $0, encoding: .utf8) }
+        return (FFIErrorCode.toolError.rawValue, toolError.message, detailsJSON)
     } else if let (code, message, detailsJSON) = mapFoundationModelsError(error) {
         return (code.rawValue, message, detailsJSON)
     } else if let timeoutError = error as? TimeoutError {

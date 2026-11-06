@@ -73,10 +73,46 @@
       error.message.not_nil!.should contain("weather service down")
     end
 
-    it "raise ToolCallError from stream" do
-      expect_raises(Fm::ToolCallError, /weather service down/) do
+    it "raise ToolCallError with the tool context from stream" do
+      error = expect_raises(Fm::ToolCallError, /weather service down/) do
         weather_session(FailingWeatherTool.new).stream("What's the weather in Tokyo?") { }
       end
+      error.tool_name.should eq("checkWeather")
+      error.arguments_json.not_nil!.should contain("location")
+    end
+  end
+
+  private class NoArgsTool < Fm::Tool
+    getter calls = 0
+
+    def name : String
+      "getServerTime"
+    end
+
+    def description : String
+      "Returns the current server time"
+    end
+
+    def arguments_schema : JSON::Any
+      JSON.parse("{}")
+    end
+
+    def call(arguments : JSON::Any) : Fm::ToolOutput
+      @calls += 1
+      Fm::ToolOutput.new("12:34")
+    end
+  end
+
+  describe "a tool with an empty arguments schema" do
+    it "is registered natively under its own name" do
+      tool = NoArgsTool.new
+      session = Fm::Session.new(Fm::SystemLanguageModel.new,
+        instructions: "Always use the server time tool.", tools: [tool] of Fm::Tool)
+      session.respond("What time is it on the server?")
+      tool.calls.should be > 0
+      names = session.transcript.entries.flat_map { |entry| entry["toolCalls"]?.try(&.as_a) || [] of JSON::Any }.map(&.["name"].as_s)
+      names.should contain("getServerTime")
+      names.should_not contain("invoke_tool")
     end
   end
 

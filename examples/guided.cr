@@ -2,13 +2,13 @@ require "../src/fm"
 
 # Guided generation example using Fm::Guide annotations.
 # Demonstrates constraining structured output fields with
-# enum values, numeric ranges, regex patterns, and array limits.
+# enum values, numeric ranges, descriptions, and array limits.
 
 struct MovieReview
   include JSON::Serializable
   include Fm::Generable
 
-  @[Fm::Guide(pattern: "^[A-Z]")]
+  @[Fm::Guide(description: "Movie title")]
   getter title : String
 
   @[Fm::Guide(any_of: ["G", "PG", "PG-13", "R", "NC-17"])]

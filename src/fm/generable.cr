@@ -39,7 +39,7 @@ module Fm
   #   @[Fm::Guide(minimum: 1, maximum: 10)]
   #   getter score : Int32
   #
-  #   @[Fm::Guide(pattern: "^[A-Z]")]
+  #   @[Fm::Guide(description: "Director's full name")]
   #   getter director : String
   #
   #   @[Fm::Guide(min_items: 1, max_items: 5)]
