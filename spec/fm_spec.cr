@@ -1745,9 +1745,26 @@ describe Fm do
       err.is_a?(Fm::GenerationError).should be_true
     end
 
-    it "produces a ToolCallError with an 'unknown' tool name (no tool context on the stream path)" do
+    it "produces a ToolCallError with an 'unknown' tool name when no tool context is given" do
       err = Fm.error_from_stream(Fm::GenerationErrorCode::ToolCall.value, "tool failed")
       err.is_a?(Fm::ToolCallError).should be_true
+      err.as(Fm::ToolCallError).tool_name.should eq("unknown")
+    end
+
+    it "reads the tool name and arguments from the stream details" do
+      err = Fm.error_from_stream(
+        Fm::GenerationErrorCode::ToolCall.value,
+        "tool failed",
+        %({"toolName":"checkWeather","toolArguments":"{\\"location\\":\\"Tokyo\\"}"})
+      ).as(Fm::ToolCallError)
+      err.details.should be_nil
+      err.tool_name.should eq("checkWeather")
+      err.arguments_json.should eq(%({"location":"Tokyo"}))
+      err.message.should eq("Tool 'checkWeather' failed: tool failed")
+    end
+
+    it "ignores non-object stream details for tool context" do
+      err = Fm.error_from_stream(Fm::GenerationErrorCode::ToolCall.value, "tool failed", "[1]")
       err.as(Fm::ToolCallError).tool_name.should eq("unknown")
     end
 
@@ -2227,6 +2244,28 @@ describe Fm do
 
     it "returns a non-object schema unchanged" do
       Fm::Schema.normalize_json("[1,2,3]").should eq "[1,2,3]"
+    end
+
+    it "spells an argument-less tool schema as an explicit empty object" do
+      empty = {"type" => "object", "title" => "noArgs", "properties" => {} of String => String,
+               "additionalProperties" => false, "required" => [] of String, "x-order" => [] of String}
+      [%({}), %({"type":"object"}), %({"description":"none"}), %({"type":"object","required":[]})].each do |raw|
+        schema = Fm::Schema.normalize_arguments(JSON.parse(raw), "noArgs")
+        empty.each { |key, value| schema[key].to_json.should eq(value.to_json) }
+      end
+    end
+
+    it "leaves an arguments schema that may carry fields alone" do
+      [
+        %({"type":"object","additionalProperties":{"type":"string"}}),
+        %({"type":"object","additionalProperties":true}),
+        %({"type":"object","patternProperties":{"^x":{"type":"string"}}}),
+        %({"allOf":[{"properties":{"a":{"type":"string"}}}]}),
+        %({"type":"object","required":["city"]}),
+        %({"type":"string"}),
+      ].each do |raw|
+        Fm::Schema.normalize_arguments(JSON.parse(raw), "t")["properties"]?.should be_nil
+      end
     end
 
     it "normalizes a tool's arguments schema so Swift can register it natively" do

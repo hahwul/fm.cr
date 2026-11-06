@@ -122,9 +122,6 @@ struct Config
   @[Fm::Guide(any_of: ["debug", "info", "warn", "error"])]
   getter log_level : String
 
-  @[Fm::Guide(pattern: "^[a-z][a-z0-9_]*$")]
-  getter identifier : String
-
   @[Fm::Guide(constant: "v1")]
   getter version : String
 end
@@ -173,7 +170,9 @@ end
 | `constant` | `Any` | `const` | Fix to a single value |
 | `minimum` | `Number` | `minimum` | Minimum numeric value |
 | `maximum` | `Number` | `maximum` | Maximum numeric value |
-| `pattern` | `String` | `pattern` | Regex pattern for strings |
+| `pattern` | `String` | `pattern` | Regex pattern for strings (see note below) |
 | `min_items` | `Int` | `minItems` | Minimum array length |
 | `max_items` | `Int` | `maxItems` | Maximum array length |
 | `count` | `Int` | `minItems` + `maxItems` | Exact array length |
+
+> **Note:** on macOS 27.2 the system model rejects every `pattern` guide with `Fm::UnsupportedGuideError`, even one declared natively in Swift (`@Guide(.pattern(...))`). The option is kept because it may work on other OS versions; prefer `any_of` or `description` there.

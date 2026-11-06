@@ -246,10 +246,9 @@ module Fm
   # Maps a known `GenerationErrorCode` + `message` to the matching typed
   # exception.
   #
-  # Shared by `error_from_swift` and `error_from_stream`. Only the FFI-pointer
-  # path (`error_from_swift`) can supply tool context, so `tool_name` /
-  # `tool_args` are optional; the stream path leaves them `nil`, producing a
-  # `ToolCallError` with an `"unknown"` tool name (preserving prior behavior).
+  # Shared by `error_from_swift` and `error_from_stream`. `tool_name` /
+  # `tool_args` are optional; a `ToolCallError` without them gets an
+  # `"unknown"` tool name.
   #
   # The default exception for an *unknown* (non-enum) code differs between the
   # two callers, so each handles that case itself before delegating here.
@@ -303,9 +302,9 @@ module Fm
   # :nodoc:
   # Converts a streaming error code and message to a typed Crystal exception.
   #
-  # Unlike `error_from_swift`, streaming errors have no FFI error pointer from
-  # which to extract tool context. macOS 27 diagnostic details are passed as a
-  # separate JSON string.
+  # Unlike `error_from_swift`, streaming errors have no FFI error pointer, so
+  # tool context and macOS 27 diagnostic details arrive as a separate JSON
+  # string.
   def self.error_from_stream(code : Int32, message : String, details_json : String? = nil) : Error
     details = parse_error_details(details_json)
     error_code = GenerationErrorCode.from_value?(code)
@@ -313,8 +312,16 @@ module Fm
     # path has no FFI error object, so InternalError would be misleading).
     return GenerationError.new(message, details: details) unless error_code
 
-    # No FFI error pointer here, so no tool context to pass; a `tool_call?`
-    # code yields a `ToolCallError` with an "unknown" tool name.
+    # No FFI error pointer here: the native side puts the tool context in the
+    # details JSON instead (`toolName` / `toolArguments`). It is not framework
+    # diagnostics, so like `respond` the `ToolCallError` carries no `details`.
+    if error_code.tool_call?
+      context = details.try(&.as_h?)
+      return exception_for(error_code, message,
+        tool_name: context.try(&.["toolName"]?).try(&.as_s?),
+        tool_args: context.try(&.["toolArguments"]?).try(&.as_s?))
+    end
+
     exception_for(error_code, message, details: details)
   end
 

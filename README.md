@@ -111,7 +111,7 @@ struct Movie
   @[Fm::Guide(minimum: 0, maximum: 10)]
   getter score : Int32
 
-  @[Fm::Guide(pattern: "^[A-Z]")]
+  @[Fm::Guide(description: "Director's full name")]
   getter director : String
 
   @[Fm::Guide(min_items: 1, max_items: 5)]
@@ -125,12 +125,14 @@ end
 | `any_of` | `enum` | Restrict the value to a set of choices |
 | `constant` | `const` | Fix the field to a single value |
 | `minimum` / `maximum` | `minimum` / `maximum` | Numeric bounds |
-| `pattern` | `pattern` | Regex pattern for string values |
+| `pattern` | `pattern` | Regex pattern for string values (see note below) |
 | `min_items` / `max_items` | `minItems` / `maxItems` | Array length bounds |
 | `count` | `minItems` + `maxItems` | Exact array length |
 
 Several guides may be stacked on one field; all of them apply, and the last one
 wins on an option they both set.
+
+> **Note:** on macOS 27.2 the system model rejects every `pattern` guide with `Fm::UnsupportedGuideError`, even one declared natively in Swift (`@Guide(.pattern(...))`). The option is kept because it may work on other OS versions; prefer `any_of` or `description` there.
 
 ### Tool Calling
 

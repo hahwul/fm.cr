@@ -69,10 +69,12 @@ end
 | `constant` | `Any` | Fix field to a single constant value |
 | `minimum` | `Number` | Minimum numeric value |
 | `maximum` | `Number` | Maximum numeric value |
-| `pattern` | `String` | Regex pattern for string values |
+| `pattern` | `String` | Regex pattern for string values (see note below) |
 | `min_items` | `Int` | Minimum array length |
 | `max_items` | `Int` | Maximum array length |
 | `count` | `Int` | Exact array length (sets both `minItems` and `maxItems`) |
+
+> **Note:** on macOS 27.2 the system model rejects every `pattern` guide with `Fm::UnsupportedGuideError`, even one declared natively in Swift (`@Guide(.pattern(...))`). The option is kept because it may work on other OS versions; prefer `any_of` or `description` there.
 
 ## Raw JSON Schema
 

@@ -37,6 +37,30 @@ module Fm
       JSON::Any.new(normalize_node(node, title))
     end
 
+    # Keys an argument-less object schema may carry.
+    private NO_ARGUMENT_KEYS = %w[type title description additionalProperties required]
+
+    # Normalizes a tool's arguments schema.
+    #
+    # A tool always receives an object, so a schema that describes no fields
+    # (`{}`, `{"type":"object"}`, one carrying only a `description`) means "no
+    # arguments". `GenerationSchema` rejects a node without `type`, which used
+    # to drop such a tool to the generic `invoke_tool` bridge; spell it as an
+    # explicit empty object so it is registered natively.
+    def self.normalize_arguments(schema : JSON::Any, title : String) : JSON::Any
+      if (node = schema.as_h?) &&
+         node.keys.all?(&.in?(NO_ARGUMENT_KEYS)) &&
+         node.fetch("type", "object") == "object" &&
+         node.fetch("additionalProperties", false) == false &&
+         (node["required"]?.try(&.as_a?) || [] of JSON::Any).empty?
+        schema = JSON::Any.new(node.merge({
+          "type"       => JSON::Any.new("object"),
+          "properties" => JSON::Any.new({} of String => JSON::Any),
+        }))
+      end
+      normalize(schema, title)
+    end
+
     # Normalizes a raw JSON schema string.
     #
     # Input that is not parseable JSON is returned unchanged rather than
