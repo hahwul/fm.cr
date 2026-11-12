@@ -137,7 +137,7 @@ Streams a JSON response matching the given schema. The block receives each chunk
 session.cancel : Nil
 ```
 
-Cancels an ongoing generation (streaming or blocking).
+Cancels an ongoing generation (streaming or blocking) from another fiber, or from inside a stream block. The cancelled call raises `Fm::CancelledError`.
 
 ### `#responding?`
 

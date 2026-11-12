@@ -53,6 +53,7 @@ module Fm
     @ptr : Void*
 
     def initialize(*, use_case : UseCase = UseCase::General, guardrails : Guardrails = Guardrails::Default)
+      Fm.install_wait_idle_callback
       error = Fm.make_error_ptr
 
       @ptr = LibFmFfi.fm_model_create(use_case.value, guardrails.value, error)
@@ -136,7 +137,7 @@ module Fm
     def token_count_for(prompt : String) : Int64?
       error = Fm.make_error_ptr
 
-      result = LibFmFfi.fm_model_token_usage_for(@ptr, prompt.to_unsafe, error)
+      result = LibFmFfi.fm_model_token_usage_for(@ptr, prompt.check_no_null_byte("prompt").to_unsafe, error)
 
       Fm.check_error!(error.value)
 
@@ -189,7 +190,7 @@ module Fm
 
       result = LibFmFfi.fm_model_token_usage_for_tools(
         @ptr,
-        instructions.to_unsafe,
+        instructions.check_no_null_byte("instructions").to_unsafe,
         tools_ptr,
         error
       )

@@ -13,6 +13,9 @@ module Fm
   # response = session.respond("Hello!")
   # puts response.content
   # ```
+  #
+  # Prompts and instructions cross into the native layer as C strings, so one
+  # containing a null byte raises `ArgumentError` instead of being cut short.
   class Session
     # Creates a new session with optional instructions, tools, and/or adapters.
     #
@@ -24,7 +27,7 @@ module Fm
     # session = Fm::Session.new(model, instructions: "Be helpful.", tools: [my_tool], adapters: [my_adapter])
     # ```
     def initialize(model : SystemLanguageModel, *, instructions : String? = nil, tools : Array(Tool)? = nil, adapters : Array(Adapter)? = nil)
-      instructions_ptr = instructions ? instructions.to_unsafe : Pointer(LibC::Char).null
+      instructions_ptr = instructions ? instructions.check_no_null_byte("instructions").to_unsafe : Pointer(LibC::Char).null
       tools_json, user_data, @tool_box = Session.prepare_tools(tools)
       tools_json_ptr = tools_json ? tools_json.to_unsafe : Pointer(LibC::Char).null
       adapter_ptrs, adapter_count = Session.prepare_adapters(adapters)
@@ -109,7 +112,7 @@ module Fm
       tools : Array(Tool)? = nil,
       adapters : Array(Adapter)? = nil,
     ) : self
-      instructions_ptr = instructions ? instructions.to_unsafe : Pointer(LibC::Char).null
+      instructions_ptr = instructions ? instructions.check_no_null_byte("instructions").to_unsafe : Pointer(LibC::Char).null
       tools_json, user_data, tool_box = prepare_tools(tools)
       tools_json_ptr = tools_json ? tools_json.to_unsafe : Pointer(LibC::Char).null
       adapter_ptrs, adapter_count = prepare_adapters(adapters)
@@ -172,7 +175,7 @@ module Fm
 
       response_ptr = LibFmFfi.fm_session_respond(
         @ptr,
-        prompt.to_unsafe,
+        prompt.check_no_null_byte("prompt").to_unsafe,
         request_options.to_unsafe,
         error
       )
@@ -205,7 +208,7 @@ module Fm
 
       response_ptr = LibFmFfi.fm_session_respond_with_timeout(
         @ptr,
-        prompt.to_unsafe,
+        prompt.check_no_null_byte("prompt").to_unsafe,
         request_options.to_unsafe,
         timeout_ms,
         error
@@ -237,7 +240,7 @@ module Fm
 
       LibFmFfi.fm_session_stream(
         @ptr,
-        prompt.to_unsafe,
+        prompt.check_no_null_byte("prompt").to_unsafe,
         request_options.to_unsafe,
         boxed,
         ->Session.on_chunk(Void*, LibC::Char*),
@@ -248,7 +251,9 @@ module Fm
       state.raise_if_error!
     end
 
-    # Cancels an ongoing stream operation.
+    # Cancels the ongoing request (`#respond`, `#stream`, ...), which then
+    # raises `CancelledError`. Call it from another fiber (other fibers keep
+    # running while a request waits for the model) or from a stream block.
     def cancel : Nil
       LibFmFfi.fm_session_cancel(@ptr)
     end
@@ -295,7 +300,7 @@ module Fm
 
     # Prewarms the model with an optional prompt prefix.
     def prewarm(prompt_prefix : String? = nil) : Nil
-      prefix_ptr = prompt_prefix ? prompt_prefix.to_unsafe : Pointer(LibC::Char).null
+      prefix_ptr = prompt_prefix ? prompt_prefix.check_no_null_byte("prompt_prefix").to_unsafe : Pointer(LibC::Char).null
       LibFmFfi.fm_session_prewarm(@ptr, prefix_ptr)
     end
 
@@ -322,7 +327,7 @@ module Fm
 
       response_ptr = LibFmFfi.fm_session_respond_json(
         @ptr,
-        prompt.to_unsafe,
+        prompt.check_no_null_byte("prompt").to_unsafe,
         schema.to_unsafe,
         request_options.to_unsafe,
         error
@@ -375,7 +380,7 @@ module Fm
 
       LibFmFfi.fm_session_stream_json(
         @ptr,
-        prompt.to_unsafe,
+        prompt.check_no_null_byte("prompt").to_unsafe,
         schema.to_unsafe,
         request_options.to_unsafe,
         boxed,

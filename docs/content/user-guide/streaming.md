@@ -57,7 +57,7 @@ puts
 
 ## Cancellation
 
-Cancel an ongoing stream from another fiber:
+Cancel an ongoing stream from another fiber. Other fibers keep running while a request waits for the model, and the cancelled call raises `Fm::CancelledError`. `#cancel` stops a blocking `#respond` the same way.
 
 ```crystal
 # Start streaming in a separate fiber
@@ -65,6 +65,8 @@ spawn do
   session.stream("Write a very long essay.") do |chunk|
     print chunk
   end
+rescue Fm::CancelledError
+  puts "\n[cancelled]"
 end
 
 # Cancel after some time
