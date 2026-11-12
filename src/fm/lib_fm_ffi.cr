@@ -26,6 +26,27 @@ module Fm
     rounded.to_u64
   end
 
+  # :nodoc:
+  # Lets other fibers run while a blocking FFI call waits for the model.
+  #
+  # Every request blocks its Crystal thread inside the native layer until it
+  # completes, so without this no other fiber on that thread could run: not a
+  # second session's request, and not the fiber calling `Session#cancel`. The
+  # native wait calls back here every few milliseconds instead.
+  #
+  # Installed from `SystemLanguageModel#initialize` (every request needs a
+  # model) rather than at load time, so programs and specs that never reach
+  # the FFI do not link `ext/libfm_ffi.a`.
+  def self.install_wait_idle_callback : Nil
+    LibFmFfi.fm_set_wait_idle_callback(-> {
+      begin
+        Fiber.yield
+      rescue
+        # Must not raise into the native caller.
+      end
+    })
+  end
+
   # Raw C FFI declarations matching the @_cdecl functions in ext/ffi.swift.
   #
   # Memory management conventions:
@@ -42,6 +63,11 @@ module Fm
     alias DoneCallback = (Void*) -> Void
     alias ErrorCallback = (Void*, Int32, LibC::Char*, LibC::Char*) -> Void
     alias ToolCallback = (Void*, LibC::Char*, LibC::Char*) -> LibC::Char*
+    alias IdleCallback = -> Void
+
+    # Run on the calling thread while a blocking call waits; see
+    # `Fm.install_wait_idle_callback`.
+    fun fm_set_wait_idle_callback(callback : IdleCallback) : Void
 
     # -- Error functions --
 

@@ -151,6 +151,8 @@ private func createErrorFromException(_ error: Error, defaultCode: FFIErrorCode 
         )
     } else if let timeoutError = error as? TimeoutError {
         return createError(timeoutError.message, code: .timeout)
+    } else if error is CancellationError {
+        return createError("Cancelled", code: .cancelled)
     } else if let (code, message, detailsJSON) = mapFoundationModelsError(error) {
         return createError(message, code: code, detailsJSON: detailsJSON)
     } else {
@@ -480,12 +482,18 @@ public func fm_model_wait_until_available(
     // Already available
     if case .available = model.availability { return 0 }
 
-    let pollInterval: TimeInterval = 0.5
-    let deadline = Date().addingTimeInterval(Double(timeoutMs) / 1000.0)
+    // Poll every 0.5 s, letting the caller's other fibers run in between.
+    let timeoutMsInt = timeoutMs > UInt64(Int.max) ? Int.max : Int(timeoutMs)
+    let deadline = DispatchTime.now() + .milliseconds(timeoutMsInt)
+    var nextPoll = DispatchTime.now()
 
-    while Date() < deadline {
-        if case .available = model.availability { return 0 }
-        Thread.sleep(forTimeInterval: pollInterval)
+    while DispatchTime.now() < deadline {
+        if DispatchTime.now() >= nextPoll {
+            if case .available = model.availability { return 0 }
+            nextPoll = DispatchTime.now() + .milliseconds(500)
+        }
+        Thread.sleep(forTimeInterval: 0.01)
+        waitIdleCallback?()
     }
 
     // Timed out
@@ -938,10 +946,13 @@ private struct ToolDefinitionError: Error, LocalizedError {
 // MARK: - Session State
 
 /// Session state container for FFI with tools support
-private final class SessionState: @unchecked Sendable {
+final class SessionState: @unchecked Sendable {
     let session: LanguageModelSession
     let toolDispatcher: ToolDispatcher?
-    var currentTask: Task<Void, Never>?
+    /// Requests in flight. Usually one, but while one waits another fiber may
+    /// start a second (which FoundationModels rejects); tracking both keeps
+    /// `cancel` working for the first.
+    private var tasks: [Task<Void, Never>] = []
     private var lastUsageJSON: String?
     private let lock = NSLock()
 
@@ -950,17 +961,24 @@ private final class SessionState: @unchecked Sendable {
         self.toolDispatcher = toolDispatcher
     }
 
-    func setTask(_ task: Task<Void, Never>?) {
+    func setTask(_ task: Task<Void, Never>) {
         lock.lock()
         defer { lock.unlock() }
-        currentTask = task
+        tasks.append(task)
+    }
+
+    /// Forgets `task` once its request is over.
+    func clearTask(_ task: Task<Void, Never>) {
+        lock.lock()
+        defer { lock.unlock() }
+        tasks.removeAll { $0 == task }
     }
 
     func cancelCurrentTask() {
         lock.lock()
         defer { lock.unlock() }
-        currentTask?.cancel()
-        currentTask = nil
+        tasks.forEach { $0.cancel() }
+        tasks.removeAll()
     }
 
     func setLastUsageJSON(_ json: String?) {
@@ -1183,7 +1201,7 @@ public func fm_session_respond(
     let contextOptionsDTO = parseContextOptionsDTO(optionsJson)
 
     do {
-        let result = try AsyncWaiter.wait {
+        let result = try AsyncWaiter.wait(session: state) {
 #if compiler(>=6.4)
             if #available(macOS 27.0, *), let contextOptionsDTO {
                 let contextOptions = makeContextOptions(contextOptionsDTO)
@@ -1229,7 +1247,7 @@ public func fm_session_respond_with_timeout(
     let contextOptionsDTO = parseContextOptionsDTO(optionsJson)
 
     do {
-        let result = try AsyncWaiter.wait(timeoutMs: timeoutMs) {
+        let result = try AsyncWaiter.wait(timeoutMs: timeoutMs, session: state) {
 #if compiler(>=6.4)
             if #available(macOS 27.0, *), let contextOptionsDTO {
                 let contextOptions = makeContextOptions(contextOptionsDTO)
@@ -1318,19 +1336,20 @@ public func fm_session_stream(
                     }
                 }
 
-                if Task.isCancelled {
-                    ticket.perform {
-                        "Cancelled".withCString { ptr in
-                            onError(userData, FFIErrorCode.cancelled.rawValue, ptr, nil)
-                        }
-                    }
-                    ticket.finish()
-                    return
-                }
+                if Task.isCancelled { break }
             }
 
+            // A cancelled stream may just end early; report it as cancelled
+            // rather than as a normal completion.
+            let cancelled = Task.isCancelled
             ticket.perform {
-                onDone(userData)
+                if cancelled {
+                    "Cancelled".withCString { ptr in
+                        onError(userData, FFIErrorCode.cancelled.rawValue, ptr, nil)
+                    }
+                } else {
+                    onDone(userData)
+                }
             }
         } catch {
             ticket.perform {
@@ -1350,7 +1369,7 @@ public func fm_session_stream(
 
     state.setTask(task)
     ticket.wait()
-    state.setTask(nil)
+    state.clearTask(task)
 }
 
 /// Cancels an ongoing stream operation.
@@ -1615,7 +1634,7 @@ public func fm_session_respond_json(
         let result: (String, String?)
         if let schema = parseGenerationSchema(schemaJson) {
             // Native GenerationSchema API — guaranteed structured output
-            result = try AsyncWaiter.wait {
+            result = try AsyncWaiter.wait(session: state) {
 #if compiler(>=6.4)
                 if #available(macOS 27.0, *), let contextOptionsDTO {
                     let contextOptions = makeContextOptions(
@@ -1687,7 +1706,7 @@ private func respondJsonViaPrompt(
     Output only the JSON object, with no additional text, markdown formatting, or explanation.
     """
 
-    let result = try AsyncWaiter.wait {
+    let result = try AsyncWaiter.wait(session: state) {
         let response = try await state.session.respond(to: structuredPrompt, options: options)
 #if compiler(>=6.4)
         if #available(macOS 27.0, *) {
@@ -1717,7 +1736,7 @@ private func respondJsonViaPrompt(
     Output only the JSON object, with no additional text, markdown formatting, or explanation.
     """
 
-    let result = try AsyncWaiter.wait {
+    let result = try AsyncWaiter.wait(session: state) {
         let response = try await state.session.respond(
             to: structuredPrompt, options: options, contextOptions: contextOptions
         )
@@ -1824,15 +1843,7 @@ public func fm_session_stream_json(
                         }
                     }
 
-                    if Task.isCancelled {
-                        ticket.perform {
-                            "Cancelled".withCString { ptr in
-                                onError(userData, FFIErrorCode.cancelled.rawValue, ptr, nil)
-                            }
-                        }
-                        ticket.finish()
-                        return
-                    }
+                    if Task.isCancelled { break }
                 }
             } else {
                 // Fallback: prompt-based JSON streaming
@@ -1877,20 +1888,21 @@ public func fm_session_stream_json(
                         }
                     }
 
-                    if Task.isCancelled {
-                        ticket.perform {
-                            "Cancelled".withCString { ptr in
-                                onError(userData, FFIErrorCode.cancelled.rawValue, ptr, nil)
-                            }
-                        }
-                        ticket.finish()
-                        return
-                    }
+                    if Task.isCancelled { break }
                 }
             }
 
+            // A cancelled stream may just end early; report it as cancelled
+            // rather than as a normal completion.
+            let cancelled = Task.isCancelled
             ticket.perform {
-                onDone(userData)
+                if cancelled {
+                    "Cancelled".withCString { ptr in
+                        onError(userData, FFIErrorCode.cancelled.rawValue, ptr, nil)
+                    }
+                } else {
+                    onDone(userData)
+                }
             }
         } catch {
             ticket.perform {
@@ -1910,7 +1922,7 @@ public func fm_session_stream_json(
 
     state.setTask(task)
     ticket.wait()
-    state.setTask(nil)
+    state.clearTask(task)
 }
 
 /// Maps a streaming error to an FFI error code and message, with full error differentiation.
@@ -1928,6 +1940,8 @@ private func mapStreamingError(_ error: Error) -> (Int32, String, String?) {
         return (code.rawValue, message, detailsJSON)
     } else if let timeoutError = error as? TimeoutError {
         return (FFIErrorCode.timeout.rawValue, timeoutError.message, nil)
+    } else if error is CancellationError {
+        return (FFIErrorCode.cancelled.rawValue, "Cancelled", nil)
     } else {
         return (FFIErrorCode.generationFailed.rawValue, error.localizedDescription, nil)
     }
@@ -1999,6 +2013,16 @@ public func fm_string_free(_ s: UnsafeMutablePointer<CChar>?) {
 
 // MARK: - Async Helpers
 
+/// Called on the waiting Crystal thread while a blocking FFI call is pending,
+/// so the Crystal side can run its other fibers (see `CallbackTicket.wait`).
+nonisolated(unsafe) private var waitIdleCallback: (@convention(c) () -> Void)?
+
+/// Installs the callback `CallbackTicket.wait` runs while a request is pending.
+@_cdecl("fm_set_wait_idle_callback")
+public func fm_set_wait_idle_callback(_ callback: (@convention(c) () -> Void)?) {
+    waitIdleCallback = callback
+}
+
 /// One blocking FFI call: runs its Crystal callbacks on the Crystal thread
 /// that is blocked in `wait` for it.
 ///
@@ -2063,13 +2087,24 @@ final class CallbackTicket: @unchecked Sendable {
                 job.body()
                 job.ran = true
                 job.finished.signal()
+                waitIdleCallback?()
                 continue
             }
             let isDone = done
             lock.unlock()
 
             if isDone { return true }
-            if wakeup.wait(timeout: deadline) == .timedOut {
+
+            // Wake up now and then to let the caller's other fibers run (one
+            // of them may want to cancel this request). Without it the whole
+            // Crystal thread sat blocked here until the request finished.
+            let idle = waitIdleCallback
+            let slice = idle == nil ? deadline : min(deadline, .now() + .milliseconds(10))
+            if wakeup.wait(timeout: slice) == .timedOut {
+                if let idle, DispatchTime.now() < deadline {
+                    idle()
+                    continue
+                }
                 lock.lock()
                 defer { lock.unlock() }
                 return done
@@ -2103,10 +2138,15 @@ final class AsyncWaiter {
         let ticket = CallbackTicket()
     }
 
-    static func wait<T: Sendable>(_ operation: @escaping @Sendable () async throws -> T) throws -> T {
+    /// `session`, when given, tracks the request so `fm_session_cancel` can
+    /// cancel it.
+    static func wait<T: Sendable>(
+        session: SessionState? = nil,
+        _ operation: @escaping @Sendable () async throws -> T
+    ) throws -> T {
         let state = AsyncState<T>()
 
-        state.ticket.start {
+        let task = state.ticket.start {
             do {
                 let value = try await operation()
                 state.result = .success(value)
@@ -2116,7 +2156,9 @@ final class AsyncWaiter {
             state.ticket.finish()
         }
 
+        session?.setTask(task)
         state.ticket.wait()
+        session?.clearTask(task)
 
         switch state.result {
         case .success(let value):
@@ -2130,6 +2172,7 @@ final class AsyncWaiter {
 
     static func wait<T: Sendable>(
         timeoutMs: UInt64,
+        session: SessionState? = nil,
         _ operation: @escaping @Sendable () async throws -> T
     ) throws -> T {
         let state = AsyncState<T>()
@@ -2144,7 +2187,10 @@ final class AsyncWaiter {
         }
 
         let timeoutMsInt = timeoutMs > UInt64(Int.max) ? Int.max : Int(timeoutMs)
-        if !state.ticket.wait(deadline: .now() + .milliseconds(timeoutMsInt)) {
+        session?.setTask(task)
+        let finished = state.ticket.wait(deadline: .now() + .milliseconds(timeoutMsInt))
+        session?.clearTask(task)
+        if !finished {
             task.cancel()
             throw TimeoutError(message: "Timed out after \(timeoutMs) ms")
         }

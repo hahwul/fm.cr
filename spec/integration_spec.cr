@@ -140,4 +140,84 @@
       end
     end
   end
+
+  private LONG_PROMPT = "Write a 2000 word essay about the history of the oceans."
+
+  # Runs `block` in its own fiber and returns a channel with its outcome.
+  private def in_fiber(&block : -> String) : Channel(String)
+    channel = Channel(String).new(1)
+    spawn do
+      channel.send(begin
+        block.call
+      rescue ex
+        ex.class.name
+      end)
+    end
+    channel
+  end
+
+  describe "a blocking request" do
+    it "lets other fibers run while it waits" do
+      ticks = 0
+      waiting = true
+      spawn do
+        while waiting
+          ticks += 1
+          sleep 5.milliseconds
+        end
+      end
+      Fm::Session.new(Fm::SystemLanguageModel.new).respond("Say hello.")
+      waiting = false
+      ticks.should be > 0
+    end
+
+    it "is cancelled by Session#cancel from another fiber: stream" do
+      session = Fm::Session.new(Fm::SystemLanguageModel.new)
+      outcome = in_fiber { session.stream(LONG_PROMPT) { }; "completed" }
+      sleep 1.second
+      session.cancel
+      outcome.receive.should eq("Fm::CancelledError")
+    end
+
+    it "is cancelled by Session#cancel from another fiber: stream_json" do
+      session = Fm::Session.new(Fm::SystemLanguageModel.new)
+      schema = %({"type":"object","properties":{"essay":{"type":"string"}},"required":["essay"]})
+      outcome = in_fiber { session.stream_json(LONG_PROMPT, schema) { }; "completed" }
+      sleep 1.second
+      session.cancel
+      outcome.receive.should eq("Fm::CancelledError")
+    end
+
+    it "stays cancellable after a concurrent request on the same session is rejected" do
+      session = Fm::Session.new(Fm::SystemLanguageModel.new)
+      outcome = in_fiber { session.respond(LONG_PROMPT); "completed" }
+      sleep 0.5.seconds
+      expect_raises(Fm::ConcurrentRequestsError) { session.respond("Say hi.") }
+      session.cancel
+      outcome.receive.should eq("Fm::CancelledError")
+    end
+
+    it "is cancelled by Session#cancel from another fiber: respond" do
+      session = Fm::Session.new(Fm::SystemLanguageModel.new)
+      outcome = in_fiber { session.respond(LONG_PROMPT); "completed" }
+      sleep 1.second
+      session.cancel
+      outcome.receive.should eq("Fm::CancelledError")
+    end
+  end
+
+  describe "a string with a null byte" do
+    it "is rejected instead of being truncated at the C boundary" do
+      model = Fm::SystemLanguageModel.new
+      expect_raises(ArgumentError, /prompt.*null byte/) do
+        Fm::Session.new(model).respond("Say A.\0Say B.")
+      end
+      expect_raises(ArgumentError, /instructions.*null byte/) do
+        Fm::Session.new(model, instructions: "Be terse.\0Be rude.")
+      end
+      expect_raises(ArgumentError, /prompt.*null byte/) do
+        model.token_count_for("a\0b")
+      end
+    end
+  end
 {% end %}
