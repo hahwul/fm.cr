@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- `Session#respond_json` (and `#respond_structured`) no longer leave an unreferenced session (`Session.new(model).respond_json(...)`) collectable while the request waits. Other fibers run during that wait, so a GC there could finalize the session, cancelling the native request and freeing the tool box its callbacks use.
+
 ## v0.4.0
 
 ### Added

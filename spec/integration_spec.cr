@@ -171,6 +171,22 @@
       ticks.should be > 0
     end
 
+    it "keeps an unreferenced session alive while other fibers collect" do
+      # Nothing holds the session but the call itself; a GC in another fiber
+      # used to be free to finalize it mid-request (see `Fm.keep_alive`).
+      collecting = true
+      spawn do
+        while collecting
+          GC.collect
+          sleep 5.milliseconds
+        end
+      end
+      schema = %({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]})
+      json = Fm::Session.new(Fm::SystemLanguageModel.new).respond_json("Name a city.", schema)
+      collecting = false
+      JSON.parse(json)["name"].as_s.should_not be_empty
+    end
+
     it "is cancelled by Session#cancel from another fiber: stream" do
       session = Fm::Session.new(Fm::SystemLanguageModel.new)
       outcome = in_fiber { session.stream(LONG_PROMPT) { }; "completed" }

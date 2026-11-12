@@ -332,6 +332,8 @@ module Fm
         request_options.to_unsafe,
         error
       )
+      # Unlike the other requests, nothing below reads `self`; see `Fm.keep_alive`.
+      Fm.keep_alive(self)
 
       Session.extract_ffi_string!(response_ptr, error, "Received null response from JSON generation")
     end
