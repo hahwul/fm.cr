@@ -125,6 +125,18 @@
       entries.size.should eq(1)
       entries.first["contents"][0]["text"].should eq("Original.")
     end
+
+    it "round-trips a transcript with tool calls, tools restored" do
+      # Calling this next to `respond` used to crash the compiler (`Fm.keep_alive`).
+      called = SleepyWeatherTool.new
+      original = weather_session(called)
+      original.respond("What's the weather in Tokyo?")
+      called.calls.should be > 0
+      tool = SleepyWeatherTool.new
+      restored = Fm::Session.from_transcript(Fm::SystemLanguageModel.new, original.transcript, tools: [tool] of Fm::Tool)
+      restored.transcript.should eq(original.transcript)
+      restored.respond("And in Paris?").content.should_not be_empty
+    end
   end
 
   describe "token counting malformed input" do
@@ -224,6 +236,54 @@
       sleep 1.second
       session.cancel
       outcome.receive.should eq("Fm::CancelledError")
+    end
+  end
+
+  class IntegrationTreeNode
+    include JSON::Serializable
+    include Fm::Generable
+
+    getter name : String
+    getter children : Array(IntegrationTreeNode)
+  end
+
+  struct IntegrationWrap(T)
+    include JSON::Serializable
+    include Fm::Generable
+
+    getter value : T
+  end
+
+  struct IntegrationWrapPair
+    include JSON::Serializable
+    include Fm::Generable
+
+    getter number : IntegrationWrap(Int32)
+    getter word : IntegrationWrap(String)
+  end
+
+  # Guided generation records the schema as the prompt's `responseFormat`; the
+  # prompt-based fallback, taken when the schema does not decode, does not.
+  private def guided?(session)
+    session.transcript.entries.any?(&.as_h.has_key?("responseFormat"))
+  end
+
+  describe "structured output for" do
+    it "a recursive type" do
+      session = Fm::Session.new(Fm::SystemLanguageModel.new)
+      tree = session.respond_structured(IntegrationTreeNode,
+        "A family tree: Alice has two children, Bob and Carol. Carol has one child, Dan.")
+      tree.name.should_not be_empty
+      guided?(session).should be_true
+    end
+
+    it "two instantiations of one generic type" do
+      # Both used to share the title `IntegrationWrap(T)`, so FoundationModels
+      # generated `word.value` as an integer and decoding the reply raised.
+      session = Fm::Session.new(Fm::SystemLanguageModel.new)
+      pair = session.respond_structured(IntegrationWrapPair, "Set number to 7 and word to apple.")
+      pair.word.value.should_not be_empty
+      guided?(session).should be_true
     end
   end
 

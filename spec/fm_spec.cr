@@ -27,6 +27,57 @@ private struct TestNested
   getter label : String
 end
 
+# Not `private`: `Generable` names a field's type (`Array(TestTreeNode)`) from
+# inside `Fm::Generable`, where a file-private type is not visible.
+class TestTreeNode
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter name : String
+  getter children : Array(TestTreeNode)
+  getter parent : TestTreeNode?
+end
+
+struct TestForest
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter trees : Array(TestTreeNode)
+end
+
+struct TestMoney
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter cents : Int32
+
+  def self.json_schema : JSON::Any
+    JSON.parse(%({"type":"object","properties":{"cents":{"type":"integer","minimum":0}},"required":["cents"]}))
+  end
+end
+
+struct TestOrder
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter total : TestMoney
+end
+
+struct TestWrap(T)
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter value : T
+end
+
+struct TestWrapPair
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter number : TestWrap(Int32)
+  getter word : TestWrap(String)
+end
+
 private struct TestWithJsonField
   include JSON::Serializable
   include Fm::Generable
@@ -787,6 +838,37 @@ describe Fm do
       required.should contain("score")
       required.should contain("tags")
       required.should_not contain("nickname")
+    end
+
+    it "spells a recursive type as a $ref instead of recursing forever" do
+      schema = TestTreeNode.json_schema
+      schema["title"].as_s.should eq "TestTreeNode"
+      props = schema["properties"].as_h
+      props["children"]["items"].should eq JSON.parse(%({"$ref":"#"}))
+      props["parent"].should eq JSON.parse(%({"$ref":"#"}))
+      schema["$defs"]?.should be_nil
+    end
+
+    it "references a recursive type nested under another type through $defs" do
+      schema = TestForest.json_schema
+      tree = schema["properties"]["trees"]["items"]
+      tree["title"].as_s.should eq "TestTreeNode"
+      tree["properties"]["children"]["items"]["$ref"].as_s.should eq "#/$defs/TestTreeNode"
+      schema["$defs"]["TestTreeNode"].should eq tree
+    end
+
+    it "uses a nested type's own json_schema override" do
+      total = TestOrder.json_schema["properties"]["total"]
+      total["properties"]["cents"]["minimum"].should eq 0
+    end
+
+    it "titles each generic instantiation distinctly" do
+      # FoundationModels merges nodes that share a title, so a shared
+      # `TestWrap(T)` made `word.value` an integer.
+      props = TestWrapPair.json_schema["properties"].as_h
+      props["number"]["title"].as_s.should eq "TestWrap(Int32)"
+      props["word"]["title"].as_s.should eq "TestWrap(String)"
+      props["word"]["properties"]["value"]["type"].as_s.should eq "string"
     end
 
     it "handles nested Generable types" do
@@ -1818,6 +1900,21 @@ describe Fm do
       transcript.json.should eq %({"transcript":{"entries":[]}})
     end
 
+    it "compares and hashes by its JSON, whether or not it has been parsed" do
+      json = %({"transcript":{"entries":[{"role":"user","contents":[]}]}})
+      read = Fm::Transcript.new(json)
+      read.entries
+      unread = Fm::Transcript.new(json)
+      read.should eq unread
+      read.hash.should eq unread.hash
+      read.should_not eq Fm::Transcript.new(%({"transcript":{"entries":[]}}))
+
+      pretty = Fm::Transcript.new(JSON.parse(json).to_pretty_json)
+      pretty.should eq unread
+      pretty.hash.should eq unread.hash
+      Fm::Transcript.new("not json").should_not eq Fm::Transcript.new("also not json")
+    end
+
     it "parses entries" do
       json = %({"transcript":{"entries":[{"role":"user","contents":[]}]}})
       transcript = Fm::Transcript.new(json)
@@ -1995,6 +2092,16 @@ describe Fm do
 
     it "saturates instead of overflowing for an absurdly large timeout" do
       Fm.timeout_to_ms(Time::Span::MAX).should eq UInt64::MAX
+    end
+  end
+
+  describe "Fm.keep_alive" do
+    it "compiles when called with several types" do
+      # Instantiating it for two types used to crash the compiler
+      # (`BUG: trying to downcast`), which broke any program that called
+      # `respond` and `from_transcript(..., tools:)`.
+      Fm.keep_alive(TestTool.new)
+      Fm.keep_alive("transcript")
     end
   end
 

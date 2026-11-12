@@ -49,83 +49,142 @@ module Fm
   module Generable
     macro included
       def self.json_schema : JSON::Any
-        properties = JSON::Any.new({} of String => JSON::Any)
-        required = [] of JSON::Any
+        # The instantiated type name, so `Wrap(Int32)` and `Wrap(String)` get
+        # distinct titles: FoundationModels merges nodes that share a title,
+        # which made both fields take whichever shape came first.
+        title = \{{ @type.name.stringify }}
+        Fm::Generable.expand(title) do
+          properties = JSON::Any.new({} of String => JSON::Any)
+          required = [] of JSON::Any
 
-        \{% for ivar in @type.instance_vars %}
-          \{% ann = ivar.annotation(JSON::Field) %}
-          \{% key = ann && ann[:key] ? ann[:key] : ivar.name.stringify %}
-          \{% unless ann && ann[:ignore] %}
-            prop_schema = Fm::Generable.type_to_schema(\{{ivar.type}})
+          \{% for ivar in @type.instance_vars %}
+            \{% ann = ivar.annotation(JSON::Field) %}
+            \{% key = ann && ann[:key] ? ann[:key] : ivar.name.stringify %}
+            \{% unless ann && ann[:ignore] %}
+              prop_schema = Fm::Generable.type_to_schema(\{{ivar.type}})
 
-            # Every `Fm::Guide` on the field is applied, not just one:
-            # `ivar.annotation` returns only the last annotation, so stacking
-            # them (the documented way to combine, say, a description with an
-            # `any_of`) silently dropped all but the final one. Later
-            # annotations still win on a key they both set.
-            \{% guides = ivar.annotations(Fm::Guide) %}
-            \{% unless guides.empty? %}
-              _h = prop_schema.as_h
+              # Every `Fm::Guide` on the field is applied, not just one:
+              # `ivar.annotation` returns only the last annotation, so stacking
+              # them (the documented way to combine, say, a description with an
+              # `any_of`) silently dropped all but the final one. Later
+              # annotations still win on a key they both set.
+              \{% guides = ivar.annotations(Fm::Guide) %}
+              \{% unless guides.empty? %}
+                _h = prop_schema.as_h
 
-              \{% for guide in guides %}
-                \{% if guide[:description] %}
-                  _h["description"] = JSON::Any.new(\{{guide[:description]}})
-                \{% end %}
+                \{% for guide in guides %}
+                  \{% if guide[:description] %}
+                    _h["description"] = JSON::Any.new(\{{guide[:description]}})
+                  \{% end %}
 
-                \{% if guide[:any_of] %}
-                  _h["enum"] = JSON::Any.new(\{{guide[:any_of]}}.map { |v| JSON::Any.new(v) })
-                \{% end %}
+                  \{% if guide[:any_of] %}
+                    _h["enum"] = JSON::Any.new(\{{guide[:any_of]}}.map { |v| JSON::Any.new(v) })
+                  \{% end %}
 
-                \{% if guide[:constant] %}
-                  _h["const"] = JSON::Any.new(\{{guide[:constant]}})
-                \{% end %}
+                  \{% if guide[:constant] %}
+                    _h["const"] = JSON::Any.new(\{{guide[:constant]}})
+                  \{% end %}
 
-                \{% if guide[:minimum] != nil %}
-                  _h["minimum"] = Fm::Generable.number_to_json(\{{guide[:minimum]}})
-                \{% end %}
+                  \{% if guide[:minimum] != nil %}
+                    _h["minimum"] = Fm::Generable.number_to_json(\{{guide[:minimum]}})
+                  \{% end %}
 
-                \{% if guide[:maximum] != nil %}
-                  _h["maximum"] = Fm::Generable.number_to_json(\{{guide[:maximum]}})
-                \{% end %}
+                  \{% if guide[:maximum] != nil %}
+                    _h["maximum"] = Fm::Generable.number_to_json(\{{guide[:maximum]}})
+                  \{% end %}
 
-                \{% if guide[:pattern] %}
-                  _h["pattern"] = JSON::Any.new(\{{guide[:pattern]}})
-                \{% end %}
+                  \{% if guide[:pattern] %}
+                    _h["pattern"] = JSON::Any.new(\{{guide[:pattern]}})
+                  \{% end %}
 
-                \{% if guide[:min_items] != nil %}
-                  _h["minItems"] = JSON::Any.new(\{{guide[:min_items]}}.to_i64)
-                \{% end %}
+                  \{% if guide[:min_items] != nil %}
+                    _h["minItems"] = JSON::Any.new(\{{guide[:min_items]}}.to_i64)
+                  \{% end %}
 
-                \{% if guide[:max_items] != nil %}
-                  _h["maxItems"] = JSON::Any.new(\{{guide[:max_items]}}.to_i64)
-                \{% end %}
+                  \{% if guide[:max_items] != nil %}
+                    _h["maxItems"] = JSON::Any.new(\{{guide[:max_items]}}.to_i64)
+                  \{% end %}
 
-                \{% if guide[:count] != nil %}
-                  _h["minItems"] = JSON::Any.new(\{{guide[:count]}}.to_i64)
-                  _h["maxItems"] = JSON::Any.new(\{{guide[:count]}}.to_i64)
+                  \{% if guide[:count] != nil %}
+                    _h["minItems"] = JSON::Any.new(\{{guide[:count]}}.to_i64)
+                    _h["maxItems"] = JSON::Any.new(\{{guide[:count]}}.to_i64)
+                  \{% end %}
                 \{% end %}
               \{% end %}
-            \{% end %}
 
-            properties.as_h[\{{key}}] = prop_schema
-            \{% unless ivar.type.nilable? || ivar.has_default_value? %}
-              required << JSON::Any.new(\{{key}})
+              properties.as_h[\{{key}}] = prop_schema
+              \{% unless ivar.type.nilable? || ivar.has_default_value? %}
+                required << JSON::Any.new(\{{key}})
+              \{% end %}
             \{% end %}
           \{% end %}
-        \{% end %}
 
-        schema = {
-          "type"       => JSON::Any.new("object"),
-          "properties" => properties,
-          "required"   => JSON::Any.new(required),
-        } of String => JSON::Any
+          schema = {
+            "type"       => JSON::Any.new("object"),
+            "properties" => properties,
+            "required"   => JSON::Any.new(required),
+          } of String => JSON::Any
 
-        # The result is normalized rather than returned raw: plain JSON Schema
-        # is not decodable by `FoundationModels.GenerationSchema`, so an
-        # un-normalized schema silently demotes every structured request to the
-        # prompt-based fallback. See `Fm::Schema`.
-        Fm::Schema.normalize(JSON::Any.new(schema), {{ @type.name.stringify }})
+          # The result is normalized rather than returned raw: plain JSON Schema
+          # is not decodable by `FoundationModels.GenerationSchema`, so an
+          # un-normalized schema silently demotes every structured request to the
+          # prompt-based fallback. See `Fm::Schema`.
+          Fm::Schema.normalize(JSON::Any.new(schema), title)
+        end
       end
+    end
+
+    # :nodoc:
+    # A Generable expansion in progress in one fiber.
+    class Expansion
+      # Titles of the types being expanded, outermost first.
+      getter stack = [] of String
+
+      # Types referenced from inside themselves, and their finished schemas.
+      getter referenced = Set(String).new
+      getter definitions = {} of String => JSON::Any
+    end
+
+    # Keyed by fiber, so concurrent expansions (other fibers, other threads)
+    # do not see each other's stack. Not `@[ThreadLocal]`: the GC does not
+    # scan thread-local storage, so it collected the state in use.
+    @@expansions = {} of Fiber => Expansion
+    @@expansions_lock = Mutex.new
+
+    # :nodoc:
+    # Builds the schema of the type titled `title` with the block, unless that
+    # type is already being expanded: then the type is recursive
+    # (`children : Array(Node)`), expanding it inline would never end, and it
+    # becomes a `$ref` instead. A reference to the root is `#`, as Apple's own
+    # encoder writes it; one to a nested type points into a `$defs` that the
+    # root collects.
+    def self.expand(title : String, & : -> JSON::Any) : JSON::Any
+      fiber = Fiber.current
+      state = @@expansions_lock.synchronize { @@expansions[fiber] ||= Expansion.new }
+      stack = state.stack
+
+      if stack.includes?(title)
+        return ref("#") if stack.first == title
+        state.referenced << title
+        return ref("#/$defs/#{title}")
+      end
+
+      stack << title
+      begin
+        schema = yield
+        state.definitions[title] = schema if state.referenced.includes?(title)
+        if stack.size == 1 && !state.definitions.empty? && (root = schema.as_h?)
+          schema = JSON::Any.new(root.merge({"$defs" => JSON::Any.new(state.definitions)}))
+        end
+        schema
+      ensure
+        stack.pop
+        @@expansions_lock.synchronize { @@expansions.delete(fiber) } if stack.empty?
+      end
+    end
+
+    private def self.ref(target : String) : JSON::Any
+      JSON::Any.new({"$ref" => JSON::Any.new(target)} of String => JSON::Any)
     end
 
     # :nodoc:

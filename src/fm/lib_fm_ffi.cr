@@ -38,8 +38,14 @@ module Fm
   # after its FFI call rather than relying on whatever code follows. The
   # empty volatile asm takes the pointer as an input, which the optimizer can
   # neither drop nor move above the call.
+  #
+  # The pointer goes through a local on purpose. With the cast written inline
+  # as the asm operand, the compiler crashed (`BUG: trying to downcast
+  # (Fm::Session | String) <- Fm::Session`) as soon as one program called
+  # this with two types, e.g. `respond` plus `from_transcript(..., tools:)`.
   def self.keep_alive(object : Reference) : Nil
-    asm("" :: "r"(object.as(Void*)) :: "volatile")
+    pointer = object.as(Void*)
+    asm("" :: "r"(pointer) :: "volatile") # ameba:disable Lint/UnusedExpression
   end
 
   # :nodoc:

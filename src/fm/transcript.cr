@@ -32,6 +32,23 @@ module Fm
     def initialize(@json : String)
     end
 
+    # Two transcripts are equal when their JSON documents are, whatever the
+    # formatting: `Session#transcript` is pretty-printed, while one read back
+    # from an enclosing document is compact. Malformed JSON compares as text.
+    # (The default struct equality also compared the parse caches, so a
+    # transcript stopped equalling an identical one once either had been read.)
+    def ==(other : Transcript) : Bool
+      return true if @json == other.json
+      parsed = to_any
+      !parsed.raw.nil? && parsed == other.to_any
+    end
+
+    # :ditto:
+    def hash(hasher)
+      parsed = to_any
+      parsed.raw.nil? ? @json.hash(hasher) : parsed.hash(hasher)
+    end
+
     # Parses the transcript JSON and returns it as `JSON::Any`.
     #
     # Returns a null `JSON::Any` if the JSON is malformed, so dependent
@@ -47,9 +64,10 @@ module Fm
 
     # Returns the transcript entries as an array.
     #
-    # Each entry is a `JSON::Any` object with at least a `"role"` field
-    # (`"instructions"`, `"user"`, `"response"`, or `"tool"`) and a
-    # `"contents"` array.
+    # Each entry is a `JSON::Any` object with a `"role"` field
+    # (`"instructions"`, `"user"`, `"response"`, or `"tool"`). Most also carry a
+    # `"contents"` array; an entry recording the model's tool calls carries
+    # `"toolCalls"` instead.
     #
     # Returns an empty array if the transcript cannot be parsed or has
     # no entries. The result is cached for subsequent calls.
