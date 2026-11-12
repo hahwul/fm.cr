@@ -949,7 +949,10 @@ private struct ToolDefinitionError: Error, LocalizedError {
 final class SessionState: @unchecked Sendable {
     let session: LanguageModelSession
     let toolDispatcher: ToolDispatcher?
-    var currentTask: Task<Void, Never>?
+    /// Requests in flight. Usually one, but while one waits another fiber may
+    /// start a second (which FoundationModels rejects); tracking both keeps
+    /// `cancel` working for the first.
+    private var tasks: [Task<Void, Never>] = []
     private var lastUsageJSON: String?
     private let lock = NSLock()
 
@@ -961,22 +964,21 @@ final class SessionState: @unchecked Sendable {
     func setTask(_ task: Task<Void, Never>) {
         lock.lock()
         defer { lock.unlock() }
-        currentTask = task
+        tasks.append(task)
     }
 
-    /// Forgets `task` once its request is over, unless another request on
-    /// this session has replaced it meanwhile.
+    /// Forgets `task` once its request is over.
     func clearTask(_ task: Task<Void, Never>) {
         lock.lock()
         defer { lock.unlock() }
-        if currentTask == task { currentTask = nil }
+        tasks.removeAll { $0 == task }
     }
 
     func cancelCurrentTask() {
         lock.lock()
         defer { lock.unlock() }
-        currentTask?.cancel()
-        currentTask = nil
+        tasks.forEach { $0.cancel() }
+        tasks.removeAll()
     }
 
     func setLastUsageJSON(_ json: String?) {

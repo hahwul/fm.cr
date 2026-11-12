@@ -188,6 +188,15 @@
       outcome.receive.should eq("Fm::CancelledError")
     end
 
+    it "stays cancellable after a concurrent request on the same session is rejected" do
+      session = Fm::Session.new(Fm::SystemLanguageModel.new)
+      outcome = in_fiber { session.respond(LONG_PROMPT); "completed" }
+      sleep 0.5.seconds
+      expect_raises(Fm::ConcurrentRequestsError) { session.respond("Say hi.") }
+      session.cancel
+      outcome.receive.should eq("Fm::CancelledError")
+    end
+
     it "is cancelled by Session#cancel from another fiber: respond" do
       session = Fm::Session.new(Fm::SystemLanguageModel.new)
       outcome = in_fiber { session.respond(LONG_PROMPT); "completed" }
