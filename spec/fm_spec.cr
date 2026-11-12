@@ -27,6 +27,37 @@ private struct TestNested
   getter label : String
 end
 
+class TestTreeNode
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter name : String
+  getter children : Array(TestTreeNode)
+  getter parent : TestTreeNode?
+end
+
+struct TestForest
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter trees : Array(TestTreeNode)
+end
+
+struct TestWrap(T)
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter value : T
+end
+
+struct TestWrapPair
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter number : TestWrap(Int32)
+  getter word : TestWrap(String)
+end
+
 private struct TestWithJsonField
   include JSON::Serializable
   include Fm::Generable
@@ -787,6 +818,29 @@ describe Fm do
       required.should contain("score")
       required.should contain("tags")
       required.should_not contain("nickname")
+    end
+
+    it "spells a recursive type as a $ref instead of recursing forever" do
+      schema = TestTreeNode.json_schema
+      schema["title"].as_s.should eq "TestTreeNode"
+      props = schema["properties"].as_h
+      props["children"]["items"].should eq JSON.parse(%({"$ref":"#/$defs/TestTreeNode"}))
+      props["parent"].should eq JSON.parse(%({"$ref":"#/$defs/TestTreeNode"}))
+    end
+
+    it "references a recursive type nested under another type by its own title" do
+      tree = TestForest.json_schema["properties"]["trees"]["items"]
+      tree["title"].as_s.should eq "TestTreeNode"
+      tree["properties"]["children"]["items"]["$ref"].as_s.should eq "#/$defs/TestTreeNode"
+    end
+
+    it "titles each generic instantiation distinctly" do
+      # FoundationModels merges nodes that share a title, so a shared
+      # `TestWrap(T)` made `word.value` an integer.
+      props = TestWrapPair.json_schema["properties"].as_h
+      props["number"]["title"].as_s.should eq "TestWrap(Int32)"
+      props["word"]["title"].as_s.should eq "TestWrap(String)"
+      props["word"]["properties"]["value"]["type"].as_s.should eq "string"
     end
 
     it "handles nested Generable types" do
@@ -1818,6 +1872,16 @@ describe Fm do
       transcript.json.should eq %({"transcript":{"entries":[]}})
     end
 
+    it "compares and hashes by its JSON, whether or not it has been parsed" do
+      json = %({"transcript":{"entries":[{"role":"user","contents":[]}]}})
+      read = Fm::Transcript.new(json)
+      read.entries
+      unread = Fm::Transcript.new(json)
+      read.should eq unread
+      read.hash.should eq unread.hash
+      read.should_not eq Fm::Transcript.new(%({"transcript":{"entries":[]}}))
+    end
+
     it "parses entries" do
       json = %({"transcript":{"entries":[{"role":"user","contents":[]}]}})
       transcript = Fm::Transcript.new(json)
@@ -1966,6 +2030,16 @@ describe Fm do
   # sub-millisecond span to 0, which `Session#respond(timeout:)` treats as
   # "no timeout" — so a deliberately tiny timeout silently became an
   # unbounded wait — and raised a bare `OverflowError` for negative spans.
+  describe "Fm.keep_alive" do
+    it "compiles when called with several types" do
+      # Instantiating it for two types used to crash the compiler
+      # (`BUG: trying to downcast`), which broke any program that called
+      # `respond` and `from_transcript(..., tools:)`.
+      Fm.keep_alive(TestTool.new)
+      Fm.keep_alive("transcript")
+    end
+  end
+
   describe "Fm.timeout_to_ms" do
     it "rounds a sub-millisecond timeout up instead of down to zero" do
       Fm.timeout_to_ms(0.5.milliseconds).should eq 1_u64

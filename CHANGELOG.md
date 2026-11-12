@@ -4,6 +4,10 @@
 
 ### Fixed
 - An unreferenced session (`Session.new(model).respond_json(...)`) is no longer collectable while its request waits; every waiting `Session` request now keeps `self` reachable until the native call returns (`respond_json` and `respond_structured` were the ones that did not already). Other fibers run during that wait, so a GC there could finalize the session, cancelling the native request and freeing the tool box its callbacks use.
+- A program that called both a waiting `Session` request (`respond`, ...) and `Session.from_transcript(..., tools:)` failed to compile with `BUG: trying to downcast (Fm::Session | String) <- Fm::Session`; `Fm.keep_alive` no longer trips that compiler bug.
+- `Generable` on a recursive type (`children : Array(Node)`) overflowed the stack; the recursive reference is now a `$ref`, which FoundationModels generates natively.
+- Two instantiations of one generic `Generable` type (`Wrap(Int32)` and `Wrap(String)`) shared the title `Wrap(T)`, so FoundationModels merged them and generated both with the first one's shape. Titles now use the instantiated type name.
+- `Transcript#==` and `#hash` compared the parse caches too, so a transcript stopped equalling an identical one once either had been read.
 
 ## v0.4.0
 

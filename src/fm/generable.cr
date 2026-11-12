@@ -49,6 +49,26 @@ module Fm
   module Generable
     macro included
       def self.json_schema : JSON::Any
+        __fm_json_schema([] of String)
+      end
+
+      # :nodoc:
+      # `visiting` holds the titles of the `Generable` types being expanded
+      # around this one. Reaching one of them again means the type is
+      # recursive (`children : Array(Node)`); expanding it inline would never
+      # end, so it becomes a `$ref` to the enclosing node with that title,
+      # which is how FoundationModels spells a recursive schema.
+      #
+      # The title is the instantiated type name, so `Wrap(Int32)` and
+      # `Wrap(String)` stay distinct: FoundationModels merges nodes that share
+      # a title, which made both fields take whichever shape came first.
+      def self.__fm_json_schema(visiting : Array(String)) : JSON::Any
+        title = \{{ @type.name.stringify }}
+        if visiting.includes?(title)
+          return JSON::Any.new({"$ref" => JSON::Any.new("#/$defs/#{title}")} of String => JSON::Any)
+        end
+        visiting = visiting + [title]
+
         properties = JSON::Any.new({} of String => JSON::Any)
         required = [] of JSON::Any
 
@@ -56,7 +76,7 @@ module Fm
           \{% ann = ivar.annotation(JSON::Field) %}
           \{% key = ann && ann[:key] ? ann[:key] : ivar.name.stringify %}
           \{% unless ann && ann[:ignore] %}
-            prop_schema = Fm::Generable.type_to_schema(\{{ivar.type}})
+            prop_schema = Fm::Generable.type_to_schema(\{{ivar.type}}, visiting)
 
             # Every `Fm::Guide` on the field is applied, not just one:
             # `ivar.annotation` returns only the last annotation, so stacking
@@ -124,7 +144,7 @@ module Fm
         # is not decodable by `FoundationModels.GenerationSchema`, so an
         # un-normalized schema silently demotes every structured request to the
         # prompt-based fallback. See `Fm::Schema`.
-        Fm::Schema.normalize(JSON::Any.new(schema), {{ @type.name.stringify }})
+        Fm::Schema.normalize(JSON::Any.new(schema), title)
       end
     end
 
@@ -143,7 +163,7 @@ module Fm
     end
 
     # Maps Crystal types to JSON Schema type descriptors.
-    def self.type_to_schema(type : T.class) : JSON::Any forall T
+    def self.type_to_schema(type : T.class, visiting : Array(String) = [] of String) : JSON::Any forall T
       {% if T == String %}
         JSON::Any.new({"type" => JSON::Any.new("string")} of String => JSON::Any)
       {% elsif T == Int32 || T == Int64 || T == Int16 || T == Int8 || T == UInt32 || T == UInt64 || T == UInt16 || T == UInt8 %}
@@ -159,14 +179,14 @@ module Fm
         {% if non_nils.empty? %}
           JSON::Any.new({"type" => JSON::Any.new("null")} of String => JSON::Any)
         {% elsif non_nils.size == 1 %}
-          Fm::Generable.type_to_schema({{ non_nils.first }})
+          Fm::Generable.type_to_schema({{ non_nils.first }}, visiting)
         {% else %}
           # A nilable union of several types (e.g. `String | Int32 | Nil`) still
           # has to describe every non-nil variant. Previously only the first was
           # emitted, producing a schema that rejected the other variants.
           any_of = [] of JSON::Any
           {% for vt in non_nils %}
-            any_of << Fm::Generable.type_to_schema({{ vt }})
+            any_of << Fm::Generable.type_to_schema({{ vt }}, visiting)
           {% end %}
           JSON::Any.new({"anyOf" => JSON::Any.new(any_of)} of String => JSON::Any)
         {% end %}
@@ -176,7 +196,7 @@ module Fm
         {% variants = T.union_types %}
         any_of = [] of JSON::Any
         {% for vt in variants %}
-          any_of << Fm::Generable.type_to_schema({{ vt }})
+          any_of << Fm::Generable.type_to_schema({{ vt }}, visiting)
         {% end %}
         JSON::Any.new({"anyOf" => JSON::Any.new(any_of)} of String => JSON::Any)
       {% elsif T < Enum %}
@@ -206,18 +226,20 @@ module Fm
           } of String => JSON::Any)
         {% end %}
       {% elsif T < Array %}
-        items = Fm::Generable.type_to_schema({{ T.type_vars[0] }})
+        items = Fm::Generable.type_to_schema({{ T.type_vars[0] }}, visiting)
         JSON::Any.new({
           "type"  => JSON::Any.new("array"),
           "items" => items,
         } of String => JSON::Any)
       {% elsif T < Hash %}
         # Hash(String, V) → JSON Schema object with additionalProperties
-        additional = Fm::Generable.type_to_schema({{ T.type_vars[1] }})
+        additional = Fm::Generable.type_to_schema({{ T.type_vars[1] }}, visiting)
         JSON::Any.new({
           "type"                 => JSON::Any.new("object"),
           "additionalProperties" => additional,
         } of String => JSON::Any)
+      {% elsif T.class.has_method?(:__fm_json_schema) %}
+        T.__fm_json_schema(visiting)
       {% elsif T.class.has_method?(:json_schema) %}
         T.json_schema
       {% else %}

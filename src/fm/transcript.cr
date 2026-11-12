@@ -32,6 +32,11 @@ module Fm
     def initialize(@json : String)
     end
 
+    # Two transcripts are equal when their JSON is. The parse caches are left
+    # out: comparing them made a transcript unequal to an identical one as soon
+    # as either had been read.
+    def_equals_and_hash @json
+
     # Parses the transcript JSON and returns it as `JSON::Any`.
     #
     # Returns a null `JSON::Any` if the JSON is malformed, so dependent
@@ -47,9 +52,10 @@ module Fm
 
     # Returns the transcript entries as an array.
     #
-    # Each entry is a `JSON::Any` object with at least a `"role"` field
-    # (`"instructions"`, `"user"`, `"response"`, or `"tool"`) and a
-    # `"contents"` array.
+    # Each entry is a `JSON::Any` object with a `"role"` field
+    # (`"instructions"`, `"user"`, `"response"`, or `"tool"`). Most also carry a
+    # `"contents"` array; an entry recording the model's tool calls carries
+    # `"toolCalls"` instead.
     #
     # Returns an empty array if the transcript cannot be parsed or has
     # no entries. The result is cached for subsequent calls.
