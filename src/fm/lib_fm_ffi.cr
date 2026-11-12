@@ -34,8 +34,10 @@ module Fm
   # nothing pointing at the receiver, so in
   # `Session.new(model).respond_json(...)` the GC could finalize the session
   # mid-request: `fm_session_free` cancels the native task and frees the
-  # tool box its callbacks use. The empty volatile asm takes the pointer as
-  # an input, which the optimizer can neither drop nor move above the call.
+  # tool box its callbacks use. Every waiting `Session` request calls this
+  # after its FFI call rather than relying on whatever code follows. The
+  # empty volatile asm takes the pointer as an input, which the optimizer can
+  # neither drop nor move above the call.
   def self.keep_alive(object : Reference) : Nil
     asm("" :: "r"(object.as(Void*)) :: "volatile")
   end

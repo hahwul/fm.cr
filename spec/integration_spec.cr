@@ -181,10 +181,15 @@
           sleep 5.milliseconds
         end
       end
-      schema = %({"type":"object","properties":{"name":{"type":"string"}},"required":["name"]})
-      json = Fm::Session.new(Fm::SystemLanguageModel.new).respond_json("Name a city.", schema)
-      collecting = false
-      JSON.parse(json)["name"].as_s.should_not be_empty
+      tool = SleepyWeatherTool.new
+      schema = %({"type":"object","properties":{"weather":{"type":"string"}},"required":["weather"]})
+      json = begin
+        weather_session(tool).respond_json("What's the weather in Tokyo?", schema)
+      ensure
+        collecting = false
+      end
+      JSON.parse(json)["weather"].as_s.should_not be_empty
+      tool.calls.should be > 0
     end
 
     it "is cancelled by Session#cancel from another fiber: stream" do
