@@ -32,10 +32,22 @@ module Fm
     def initialize(@json : String)
     end
 
-    # Two transcripts are equal when their JSON is. The parse caches are left
-    # out: comparing them made a transcript unequal to an identical one as soon
-    # as either had been read.
-    def_equals_and_hash @json
+    # Two transcripts are equal when their JSON documents are, whatever the
+    # formatting: `Session#transcript` is pretty-printed, while one read back
+    # from an enclosing document is compact. Malformed JSON compares as text.
+    # (The default struct equality also compared the parse caches, so a
+    # transcript stopped equalling an identical one once either had been read.)
+    def ==(other : Transcript) : Bool
+      return true if @json == other.json
+      parsed = to_any
+      !parsed.raw.nil? && parsed == other.to_any
+    end
+
+    # :ditto:
+    def hash(hasher)
+      parsed = to_any
+      parsed.raw.nil? ? @json.hash(hasher) : parsed.hash(hasher)
+    end
 
     # Parses the transcript JSON and returns it as `JSON::Any`.
     #

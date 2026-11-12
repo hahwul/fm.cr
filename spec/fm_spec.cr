@@ -27,6 +27,8 @@ private struct TestNested
   getter label : String
 end
 
+# Not `private`: `Generable` names a field's type (`Array(TestTreeNode)`) from
+# inside `Fm::Generable`, where a file-private type is not visible.
 class TestTreeNode
   include JSON::Serializable
   include Fm::Generable
@@ -41,6 +43,24 @@ struct TestForest
   include Fm::Generable
 
   getter trees : Array(TestTreeNode)
+end
+
+struct TestMoney
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter cents : Int32
+
+  def self.json_schema : JSON::Any
+    JSON.parse(%({"type":"object","properties":{"cents":{"type":"integer","minimum":0}},"required":["cents"]}))
+  end
+end
+
+struct TestOrder
+  include JSON::Serializable
+  include Fm::Generable
+
+  getter total : TestMoney
 end
 
 struct TestWrap(T)
@@ -824,14 +844,22 @@ describe Fm do
       schema = TestTreeNode.json_schema
       schema["title"].as_s.should eq "TestTreeNode"
       props = schema["properties"].as_h
-      props["children"]["items"].should eq JSON.parse(%({"$ref":"#/$defs/TestTreeNode"}))
-      props["parent"].should eq JSON.parse(%({"$ref":"#/$defs/TestTreeNode"}))
+      props["children"]["items"].should eq JSON.parse(%({"$ref":"#"}))
+      props["parent"].should eq JSON.parse(%({"$ref":"#"}))
+      schema["$defs"]?.should be_nil
     end
 
-    it "references a recursive type nested under another type by its own title" do
-      tree = TestForest.json_schema["properties"]["trees"]["items"]
+    it "references a recursive type nested under another type through $defs" do
+      schema = TestForest.json_schema
+      tree = schema["properties"]["trees"]["items"]
       tree["title"].as_s.should eq "TestTreeNode"
       tree["properties"]["children"]["items"]["$ref"].as_s.should eq "#/$defs/TestTreeNode"
+      schema["$defs"]["TestTreeNode"].should eq tree
+    end
+
+    it "uses a nested type's own json_schema override" do
+      total = TestOrder.json_schema["properties"]["total"]
+      total["properties"]["cents"]["minimum"].should eq 0
     end
 
     it "titles each generic instantiation distinctly" do
@@ -1880,6 +1908,11 @@ describe Fm do
       read.should eq unread
       read.hash.should eq unread.hash
       read.should_not eq Fm::Transcript.new(%({"transcript":{"entries":[]}}))
+
+      pretty = Fm::Transcript.new(JSON.parse(json).to_pretty_json)
+      pretty.should eq unread
+      pretty.hash.should eq unread.hash
+      Fm::Transcript.new("not json").should_not eq Fm::Transcript.new("also not json")
     end
 
     it "parses entries" do
@@ -2030,16 +2063,6 @@ describe Fm do
   # sub-millisecond span to 0, which `Session#respond(timeout:)` treats as
   # "no timeout" — so a deliberately tiny timeout silently became an
   # unbounded wait — and raised a bare `OverflowError` for negative spans.
-  describe "Fm.keep_alive" do
-    it "compiles when called with several types" do
-      # Instantiating it for two types used to crash the compiler
-      # (`BUG: trying to downcast`), which broke any program that called
-      # `respond` and `from_transcript(..., tools:)`.
-      Fm.keep_alive(TestTool.new)
-      Fm.keep_alive("transcript")
-    end
-  end
-
   describe "Fm.timeout_to_ms" do
     it "rounds a sub-millisecond timeout up instead of down to zero" do
       Fm.timeout_to_ms(0.5.milliseconds).should eq 1_u64
@@ -2069,6 +2092,16 @@ describe Fm do
 
     it "saturates instead of overflowing for an absurdly large timeout" do
       Fm.timeout_to_ms(Time::Span::MAX).should eq UInt64::MAX
+    end
+  end
+
+  describe "Fm.keep_alive" do
+    it "compiles when called with several types" do
+      # Instantiating it for two types used to crash the compiler
+      # (`BUG: trying to downcast`), which broke any program that called
+      # `respond` and `from_transcript(..., tools:)`.
+      Fm.keep_alive(TestTool.new)
+      Fm.keep_alive("transcript")
     end
   end
 
