@@ -27,6 +27,22 @@ module Fm
   end
 
   # :nodoc:
+  # Keeps `object` reachable up to this call, like Go's `runtime.KeepAlive`.
+  #
+  # Other fibers run (and may collect) while a request waits in the native
+  # layer. A method that does not touch `self` after its FFI call leaves
+  # nothing pointing at the receiver, so in
+  # `Session.new(model).respond_json(...)` the GC could finalize the session
+  # mid-request: `fm_session_free` cancels the native task and frees the
+  # tool box its callbacks use. Every waiting `Session` request calls this
+  # after its FFI call rather than relying on whatever code follows. The
+  # empty volatile asm takes the pointer as an input, which the optimizer can
+  # neither drop nor move above the call.
+  def self.keep_alive(object : Reference) : Nil
+    asm("" :: "r"(object.as(Void*)) :: "volatile")
+  end
+
+  # :nodoc:
   # Lets other fibers run while a blocking FFI call waits for the model.
   #
   # Every request blocks its Crystal thread inside the native layer until it

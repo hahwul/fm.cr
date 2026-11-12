@@ -171,6 +171,27 @@
       ticks.should be > 0
     end
 
+    it "keeps an unreferenced session alive while other fibers collect" do
+      # Nothing holds the session but the call itself; a GC in another fiber
+      # used to be free to finalize it mid-request (see `Fm.keep_alive`).
+      collecting = true
+      spawn do
+        while collecting
+          GC.collect
+          sleep 5.milliseconds
+        end
+      end
+      tool = SleepyWeatherTool.new
+      schema = %({"type":"object","properties":{"weather":{"type":"string"}},"required":["weather"]})
+      json = begin
+        weather_session(tool).respond_json("What's the weather in Tokyo?", schema)
+      ensure
+        collecting = false
+      end
+      JSON.parse(json)["weather"].as_s.should_not be_empty
+      tool.calls.should be > 0
+    end
+
     it "is cancelled by Session#cancel from another fiber: stream" do
       session = Fm::Session.new(Fm::SystemLanguageModel.new)
       outcome = in_fiber { session.stream(LONG_PROMPT) { }; "completed" }

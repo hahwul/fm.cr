@@ -122,10 +122,10 @@ module Fm
       # Safety contract: `fm_session_from_transcript` is a *synchronous* FFI
       # call. Swift parses/copies the `tools_json` C string before returning,
       # so the buffer only needs to stay alive for the duration of this call.
-      # `tools_json` is a local with no use after the call, so we explicitly
-      # reference it below (`tools_json.try(&.size)`) to keep the String — and
-      # thus the C buffer behind `tools_json_ptr` — reachable across the call,
-      # guarding against a use-after-free should Swift ever briefly retain it.
+      # `tools_json` is a local with no use after the call, so `Fm.keep_alive`
+      # below keeps the String — and thus the C buffer behind
+      # `tools_json_ptr` — reachable across the call, guarding against a
+      # use-after-free should Swift ever briefly retain it.
       ptr = LibFmFfi.fm_session_from_transcript(
         model.to_unsafe,
         transcript_json.to_unsafe,
@@ -139,8 +139,8 @@ module Fm
       )
 
       # Keep `tools_json` reachable until the FFI call has fully returned (see
-      # the safety contract above). Cheap and side-effect free.
-      tools_json.try(&.size)
+      # the safety contract above).
+      tools_json.try { |json| Fm.keep_alive(json) }
 
       Fm.check_error!(error.value)
 
@@ -179,6 +179,7 @@ module Fm
         request_options.to_unsafe,
         error
       )
+      Fm.keep_alive(self) # the session must outlive the wait; see `Fm.keep_alive`
 
       Response.new(Session.extract_ffi_string!(response_ptr, error), last_usage)
     end
@@ -213,6 +214,7 @@ module Fm
         timeout_ms,
         error
       )
+      Fm.keep_alive(self) # the session must outlive the wait; see `Fm.keep_alive`
 
       Response.new(Session.extract_ffi_string!(response_ptr, error), last_usage)
     end
@@ -247,6 +249,7 @@ module Fm
         ->Session.on_done(Void*),
         ->Session.on_error(Void*, Int32, LibC::Char*, LibC::Char*)
       )
+      Fm.keep_alive(self) # the session must outlive the wait; see `Fm.keep_alive`
 
       state.raise_if_error!
     end
@@ -332,6 +335,7 @@ module Fm
         request_options.to_unsafe,
         error
       )
+      Fm.keep_alive(self) # the session must outlive the wait; see `Fm.keep_alive`
 
       Session.extract_ffi_string!(response_ptr, error, "Received null response from JSON generation")
     end
@@ -388,6 +392,7 @@ module Fm
         ->Session.on_done(Void*),
         ->Session.on_error(Void*, Int32, LibC::Char*, LibC::Char*)
       )
+      Fm.keep_alive(self) # the session must outlive the wait; see `Fm.keep_alive`
 
       state.raise_if_error!
     end
